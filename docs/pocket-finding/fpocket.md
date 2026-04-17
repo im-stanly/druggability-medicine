@@ -2,6 +2,8 @@
 
 [Manual](https://github.com/Discngine/fpocket/blob/master/doc/MANUAL.md)
 
+[Getting started](https://github.com/Discngine/fpocket/tree/master?tab=readme-ov-file#getting-started)
+
 ## Zasada działania
 Metoda opiera się na teselacji Voronoia oraz koncepcji sfer alpha.
 
@@ -143,8 +145,6 @@ Najłatwiej zrozumieć różnicę, patrząc na końcówkę linii w obu plikach d
 ### Dlaczego to jest ważne przy lokalizacji?
 * Jeśli otworzysz **PDB**, zobaczysz "chmurę kropek". Trudno ocenić, gdzie kieszeń się kończy, a gdzie zaczyna.
 * Jeśli otworzysz **PQR** w programie obsługującym ten format (np. VMD), program narysuje kule o podanych promieniach. Zobaczysz wtedy **pełny kształt (odlew) kieszeni**, co pozwoli Ci precyzyjnie ocenić jej objętość i granice.
-
-
 
 ---
 

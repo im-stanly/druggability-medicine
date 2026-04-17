@@ -1,5 +1,8 @@
 # P2RANK — zasada działania (z claude xd)
 
+[Setup and usage](https://github.com/rdk/p2rank?tab=readme-ov-file#setup)
+[Usage examples](https://github.com/rdk/p2rank?tab=readme-ov-file#%E2%80%8D-usage-examples)
+
 ## Czym jest P2RANK?
 [Krivák, R., Hoksza, D. P2Rank: machine learning based tool for rapid and accurate prediction of ligand binding sites from protein structure. J Cheminform 10, 39 (2018).](https://doi.org/10.1186/s13321-018-0285-8)
 
