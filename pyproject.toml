@@ -20,6 +20,7 @@ dependencies = [
     "pandas>=2.3.3",
     "biopython>=1.87",
     "rdkit>=2025.9.6",
+    "py3dmol>=2.5.4",
 ]
 
 [project.scripts]
