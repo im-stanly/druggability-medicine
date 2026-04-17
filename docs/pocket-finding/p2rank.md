@@ -81,3 +81,18 @@ Ranking kieszeni wiążących
 
 P2RANK jest szczególnie przydatny w zautomatyzowanych badaniach przesiewowych, gdzie kluczowa jest zarówno prędkość działania, jak i brak zależności od zewnętrznych zasobów strukturalnych.
 
+## Format wyjścia
+
+### Prediction output 
+
+   For each structure file `{struct_file}` in the dataset, P2Rank generates several output files:
+   * `{struct_file}_predictions.csv`: lists **predicted pockets** in order of score, including each pocket's score, center coordinates, adjacent residues, adjacent protein surface atoms, and a calibrated probability of being a ligand-binding site.
+   * `{struct_file}_residues.csv`: lists **all residues** from the input protein along with their scores, mapping to predicted pockets, and a calibrated probability of being a ligand-binding residue.
+   * **PyMol and ChimeraX visualizations**: `.pml` and `.cxc` scripts in `visualizations/` directory  with additional files in `data/`.
+     * Optional settings:
+       * Use `-visualizations 0` to disable visualization generation.
+       * Use `-vis_renderers 'pymol,chimerax'` to toggle specific renderers on/off.
+       * Use `-vis_copy_proteins 0` to prevent copying protein structures to the visualizations directory (faster, but visualizations won't be portable). 
+   * **SAS points data**: coordinates and ligandability scores for solvent-accessible surface (SAS) points are saved in `visualizations/data/{struct_file}_points.pdb.gz`. Here:
+     * Residue sequence number (position 23-26) represents the pocket rank (0 indicates no pocket).
+     * B-factor column contains predicted ligandability score.
