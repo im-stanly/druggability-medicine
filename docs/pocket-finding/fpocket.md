@@ -31,7 +31,7 @@ Jest tu moduł do ekstrakcji deskryptorów fizykochemicznych dla kieszeni. Podaj
 
 ###  Output files description
 
-fpocket yields output directly in the directory of the data file, creating a directory using the name of the PDB file followed bu the _out extension. Here, the command ll sample/3LKF_out of the current sample run would look something like this:
+fpocket yields output directly in the directory of the data file, creating a directory using the name of the PDB file followed by the _out extension. Here, the command ll sample/3LKF_out of the current sample run would look something like this:
 
         total 332
         -rw-r--r-- 1 peter users    769 Nov 29 00:14 3LKF.pml
