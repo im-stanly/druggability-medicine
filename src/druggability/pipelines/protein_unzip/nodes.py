@@ -10,4 +10,4 @@ def process_partitions(partitions: Dict[str, Callable[[], Any]]) -> Dict[str, st
         name = partition_id.split('-')[0]
         result[name] = text
 
-    return result
+    return result, []

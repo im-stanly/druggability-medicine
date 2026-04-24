@@ -10,7 +10,7 @@ def create_pipeline(**kwargs) -> Pipeline:
     return Pipeline([
         node(
             func=do_whatever,
-            inputs="protein_structure_dataset",
+            inputs=["decompression_complete","protein_structure_dataset"],
             outputs=None
         )
     ])

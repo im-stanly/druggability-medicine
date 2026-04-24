@@ -7,7 +7,7 @@ def create_pipeline(**kwargs) -> Pipeline:
         node(
             func=process_partitions,
             inputs="raw_protein_cifs",
-            outputs="intermediate_protein_cifs",
+            outputs=["intermediate_protein_cifs", "decompression_complete"],
             name="unzip_cif_files_node",
         )
     ])
