@@ -2,3 +2,19 @@
 #
 # Documentation for this file format can be found in "The Data Catalog"
 # Link: https://docs.kedro.org/en/stable/catalog-data/introduction/#data-catalog
+
+raw_protein_cifs:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/proteins/
+  dataset: druggability.datasets.path_dataset.PathDataset
+  filename_suffix: .cif.gz
+
+intermediate_protein_cifs:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/proteins/
+  dataset: text.TextDataset
+  filename_suffix: .cif
+
+protein_structure_dataset:
+  type: druggability.datasets.protein_dataset.MmcifPairedDataset
+  root_path: data/02_intermediate/proteins/
