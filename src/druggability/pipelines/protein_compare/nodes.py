@@ -80,7 +80,7 @@ def align_and_calculate_rmsd(protein_pairs):
     return result_df
 
 
-def find_matching_chains(protein_pairs, aligner_cfg, thresh):
+def find_matching_chains(protein_pairs, aligner_cfg, thresh, _):
     aligner = _get_aligner(**aligner_cfg)
     matched_pairs = []
     for data_dict in protein_pairs:
