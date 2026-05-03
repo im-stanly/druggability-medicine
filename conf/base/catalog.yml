@@ -26,3 +26,25 @@ matched_protein_pairs_dataset:
 protein_alignment_results_dataset:
   type: pandas.CSVDataset
   filepath: data/08_reporting/protein_alignment_results.csv
+
+aligned_protein_pairs_dataset:
+  type: druggability.datasets.protein_dataset.MmcifPairedDataset
+  root_path: data/03_primary/aligned_protein_pairs/
+
+aligned_paths:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/03_primary/aligned_protein_pairs/
+  dataset: druggability.datasets.path_dataset.PathDataset
+  filename_suffix: .cif
+
+predicted_pockets_dataset:
+  type: kedro_datasets.pandas.CSVDataset
+  filepath: data/04_feature/predicted_pockets.csv
+
+pocket_comparison_metrics_dataset:
+  type: kedro_datasets.pandas.CSVDataset
+  filepath: data/08_reporting/pocket_comparison_metrics.csv
+
+pocket_comparison_summary_dataset:
+  type: kedro_datasets.pandas.CSVDataset
+  filepath: data/08_reporting/pocket_comparison_summary.csv
