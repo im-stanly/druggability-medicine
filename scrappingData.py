@@ -388,7 +388,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--plddt-min", type=float, default=70.0)
 	parser.add_argument("--limit", type=int, default=500)
 	parser.add_argument("--no-download", dest="download", action="store_false")
-	parser.add_argument("--output-dir", default="data/01_raw/proteins")
+	parser.add_argument("--output-dir", default="data/01_raw/proteinsScrapped")
 	parser.add_argument("--output-json", default="data/01_raw/rcsb_hits.json")
 	parser.add_argument("--polite-delay", type=float, default=0.25)
 	parser.add_argument("--debug", action="store_true")
