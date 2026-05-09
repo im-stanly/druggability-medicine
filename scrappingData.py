@@ -5,17 +5,15 @@ Criteria:
 - New releases (default: last 4 years)
 - Resolution between 2-3 A (lower is better)
 - R-free between 0.15-0.25 (lower is better)
-- AlphaFold global pLDDT > 70 (higher is better)
+- At least one non-polymer ligand (waters are excluded)
 
 Downloaded files:
 - RCSB: .cif.gz
-- AlphaFold: .cif (downloaded) -> .cif.gz (compressed locally)
+- Ligands: .cif (downloaded) -> .cif.gz (compressed locally)
 
 Output layout:
-- <output_dir>/<UNIPROT_ID>/PDB-<ENTRY_ID>.cif.gz
-- <output_dir>/<UNIPROT_ID>/AF-*.cif.gz
-
-Note: AlphaFold pLDDT is fetched from the AlphaFold DB API using UniProt IDs.
+- <output_dir>/<ENTRY_ID>/PDB-<ENTRY_ID>.cif.gz
+- <output_dir>/<ENTRY_ID>/LIG-<COMP_ID>.cif.gz
 """
 
 from __future__ import annotations
@@ -26,9 +24,9 @@ import json
 import os
 import shutil
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import requests
 from rcsbapi.search import Sort
@@ -37,8 +35,10 @@ from rcsbapi.search import search_attributes as attrs
 
 RCSB_ENTRY_URL = "https://data.rcsb.org/rest/v1/core/entry/{}"
 RCSB_POLYMER_ENTITY_URL = "https://data.rcsb.org/rest/v1/core/polymer_entity/{}/{}"
+RCSB_NONPOLYMER_ENTITY_URL = "https://data.rcsb.org/rest/v1/core/nonpolymer_entity/{}/{}"
 RCSB_CIF_GZ_URL = "https://files.rcsb.org/download/{}.cif.gz"
-ALPHAFOLD_API_URL = "https://alphafold.ebi.ac.uk/api/prediction/{}"
+RCSB_LIGAND_CIF_URL = "https://files.rcsb.org/ligands/view/{}.cif"
+LIGAND_SKIP_IDS = {"HOH", "DOD", "WAT"}
 
 
 @dataclass
@@ -48,10 +48,9 @@ class EntryRecord:
 	resolution: Optional[float]
 	r_free: Optional[float]
 	uniprot_ids: List[str]
-	alphafold_uniprot_id: Optional[str]
-	alphafold_plddt: Optional[float]
+	ligand_comp_ids: List[str]
 	rcsb_cif_gz_path: Optional[str] = None
-	alphafold_cif_gz_path: Optional[str] = None
+	ligand_cif_gz_paths: List[str] = field(default_factory=list)
 
 
 def build_search_query(
@@ -158,6 +157,17 @@ def extract_polymer_entity_ids(entry_json: dict) -> List[str]:
 	return identifiers.get("polymer_entity_ids", []) if identifiers else []
 
 
+def extract_nonpolymer_entity_ids(entry_json: dict) -> List[str]:
+	identifiers = entry_json.get("rcsb_entry_container_identifiers", {})
+	if not identifiers:
+		return []
+	return (
+		identifiers.get("non_polymer_entity_ids")
+		or identifiers.get("nonpolymer_entity_ids")
+		or []
+	)
+
+
 def fetch_uniprot_ids(
 	entry_id: str, entity_ids: Iterable[str], session: requests.Session
 ) -> List[str]:
@@ -181,6 +191,18 @@ def fetch_uniprot_ids(
 	return deduped
 
 
+def gzip_file(path: str) -> str:
+	if path.endswith(".gz"):
+		return path
+	gz_path = f"{path}.gz"
+	if os.path.exists(gz_path):
+		return gz_path
+	with open(path, "rb") as source, gzip.open(gz_path, "wb") as target:
+		shutil.copyfileobj(source, target)
+	os.remove(path)
+	return gz_path
+
+
 def is_human_entity(entity_json: dict) -> bool:
 	def has_human_organism(items: Optional[List[dict]]) -> bool:
 		if not items:
@@ -197,42 +219,33 @@ def is_human_entity(entity_json: dict) -> bool:
 	)
 
 
-def fetch_alphafold_info(
-	uniprot_id: str,
+def fetch_ligand_comp_ids(
+	entry_id: str,
+	nonpolymer_entity_ids: Iterable[str],
 	session: requests.Session,
-	cache: Dict[str, Tuple[Optional[float], Optional[str]]],
-) -> Tuple[Optional[float], Optional[str]]:
-	if uniprot_id in cache:
-		return cache[uniprot_id]
-
-	url = ALPHAFOLD_API_URL.format(uniprot_id)
-	response = session.get(url, timeout=30)
-	if response.status_code == 404:
-		cache[uniprot_id] = (None, None)
-		return cache[uniprot_id]
-	response.raise_for_status()
-	payload = response.json()
-	if not payload:
-		cache[uniprot_id] = (None, None)
-		return cache[uniprot_id]
-	# AlphaFold DB returns a list; use the first item.
-	value = payload[0].get("globalMetricValue")
-	cif_url = payload[0].get("cifUrl")
-	plddt = float(value) if value is not None else None
-	cache[uniprot_id] = (plddt, cif_url)
-	return cache[uniprot_id]
-
-
-def gzip_file(path: str) -> str:
-	if path.endswith(".gz"):
-		return path
-	gz_path = f"{path}.gz"
-	if os.path.exists(gz_path):
-		return gz_path
-	with open(path, "rb") as source, gzip.open(gz_path, "wb") as target:
-		shutil.copyfileobj(source, target)
-	os.remove(path)
-	return gz_path
+) -> List[str]:
+	comp_ids: List[str] = []
+	for entity_id in nonpolymer_entity_ids:
+		url = RCSB_NONPOLYMER_ENTITY_URL.format(entry_id, entity_id)
+		entity_json = safe_get(url, session)
+		if not entity_json:
+			continue
+		comp_id = (entity_json.get("pdbx_entity_nonpoly") or {}).get("comp_id")
+		if not comp_id:
+			container = entity_json.get("rcsb_nonpolymer_entity_container_identifiers", {})
+			comp_id = container.get("nonpolymer_comp_id") or container.get("chem_ref_def_id")
+		if comp_id:
+			comp_ids.append(comp_id)
+	# Deduplicate while preserving order and skip waters.
+	seen = set()
+	deduped: List[str] = []
+	for comp_id in comp_ids:
+		if comp_id in LIGAND_SKIP_IDS:
+			continue
+		if comp_id not in seen:
+			seen.add(comp_id)
+			deduped.append(comp_id)
+	return deduped
 
 
 def download_rcsb_cif_gz(entry_id: str, output_dir: str, session: requests.Session) -> str:
@@ -250,25 +263,26 @@ def download_rcsb_cif_gz(entry_id: str, output_dir: str, session: requests.Sessi
 	return path
 
 
-def download_alphafold_cif_gz(
-	uniprot_id: str, cif_url: Optional[str], output_dir: str, session: requests.Session
+def download_ligand_cif_gz(
+	comp_id: str, output_dir: str, session: requests.Session
 ) -> Optional[str]:
-	if not cif_url:
+	if comp_id in LIGAND_SKIP_IDS:
 		return None
 	os.makedirs(output_dir, exist_ok=True)
-	filename = os.path.basename(cif_url)
-	if not filename.endswith(".cif"):
-		filename = f"AF-{uniprot_id}.cif"
-	path = os.path.join(output_dir, filename)
+	url = RCSB_LIGAND_CIF_URL.format(comp_id)
+	path = os.path.join(output_dir, f"LIG-{comp_id}.cif")
 	gz_path = f"{path}.gz"
 	if os.path.exists(gz_path):
 		return gz_path
-	with session.get(cif_url, stream=True, timeout=60) as response:
-		response.raise_for_status()
-		with open(path, "wb") as handle:
-			for chunk in response.iter_content(chunk_size=1024 * 64):
-				if chunk:
-					handle.write(chunk)
+	if not os.path.exists(path):
+		with session.get(url, stream=True, timeout=60) as response:
+			if response.status_code == 404:
+				return None
+			response.raise_for_status()
+			with open(path, "wb") as handle:
+				for chunk in response.iter_content(chunk_size=1024 * 64):
+					if chunk:
+						handle.write(chunk)
 	return gzip_file(path)
 
 
@@ -276,14 +290,12 @@ def collect_records(
 	entry_ids: Iterable[str],
 	rfree_min: float,
 	rfree_max: float,
-	plddt_min: float,
 	download: bool,
 	output_dir: str,
 	polite_delay: float,
 	debug: bool,
 ) -> List[EntryRecord]:
 	session = requests.Session()
-	alphafold_cache: Dict[str, Tuple[Optional[float], Optional[str]]] = {}
 	records: List[EntryRecord] = []
 	stats = {
 		"entries_total": 0,
@@ -292,8 +304,9 @@ def collect_records(
 		"rfree_out_of_range": 0,
 		"no_entity_ids": 0,
 		"no_human_uniprot": 0,
-		"no_alphafold_model": 0,
-		"plddt_below_threshold": 0,
+		"no_nonpolymer_entities": 0,
+		"no_ligand_comp_ids": 0,
+		"ligand_download_missing": 0,
 		"records_saved": 0,
 	}
 
@@ -319,25 +332,14 @@ def collect_records(
 		uniprot_ids = fetch_uniprot_ids(entry_id, entity_ids, session)
 		if not uniprot_ids:
 			stats["no_human_uniprot"] += 1
-			continue
 
-		best_plddt: Optional[float] = None
-		best_uid: Optional[str] = None
-		best_cif_url: Optional[str] = None
-		for uid in uniprot_ids:
-			plddt, cif_url = fetch_alphafold_info(uid, session, alphafold_cache)
-			if plddt is None or cif_url is None:
-				continue
-			if best_plddt is None or plddt > best_plddt:
-				best_plddt = plddt
-				best_uid = uid
-				best_cif_url = cif_url
-
-		if best_plddt is None:
-			stats["no_alphafold_model"] += 1
+		nonpolymer_entity_ids = extract_nonpolymer_entity_ids(entry_json)
+		if not nonpolymer_entity_ids:
+			stats["no_nonpolymer_entities"] += 1
 			continue
-		if best_plddt < plddt_min:
-			stats["plddt_below_threshold"] += 1
+		ligand_comp_ids = fetch_ligand_comp_ids(entry_id, nonpolymer_entity_ids, session)
+		if not ligand_comp_ids:
+			stats["no_ligand_comp_ids"] += 1
 			continue
 
 		record = EntryRecord(
@@ -346,16 +348,18 @@ def collect_records(
 			resolution=extract_resolution(entry_json),
 			r_free=r_free,
 			uniprot_ids=uniprot_ids,
-			alphafold_uniprot_id=best_uid,
-			alphafold_plddt=best_plddt,
+			ligand_comp_ids=ligand_comp_ids,
 		)
 
 		if download:
-			protein_dir = os.path.join(output_dir, best_uid or entry_id)
+			protein_dir = os.path.join(output_dir, entry_id)
 			record.rcsb_cif_gz_path = download_rcsb_cif_gz(entry_id, protein_dir, session)
-			record.alphafold_cif_gz_path = download_alphafold_cif_gz(
-				best_uid or "", best_cif_url, protein_dir, session
-			)
+			for comp_id in ligand_comp_ids:
+				ligand_path = download_ligand_cif_gz(comp_id, protein_dir, session)
+				if ligand_path:
+					record.ligand_cif_gz_paths.append(ligand_path)
+				else:
+					stats["ligand_download_missing"] += 1
 
 		records.append(record)
 		stats["records_saved"] += 1
@@ -378,18 +382,17 @@ def write_output(records: List[EntryRecord], output_path: str) -> None:
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Search and download recent human protein structures from RCSB and AlphaFold."
+		description="Search and download recent human protein structures with ligands from RCSB."
 	)
 	parser.add_argument("--years", type=int, default=4)
 	parser.add_argument("--resolution-min", type=float, default=2.0)
 	parser.add_argument("--resolution-max", type=float, default=3.0)
 	parser.add_argument("--rfree-min", type=float, default=0.15)
 	parser.add_argument("--rfree-max", type=float, default=0.25)
-	parser.add_argument("--plddt-min", type=float, default=70.0)
 	parser.add_argument("--limit", type=int, default=500)
 	parser.add_argument("--no-download", dest="download", action="store_false")
-	parser.add_argument("--output-dir", default="data/01_raw/proteinsScrapped")
-	parser.add_argument("--output-json", default="data/01_raw/rcsb_hits.json")
+	parser.add_argument("--output-dir", default="data/scrapped/structures")
+	parser.add_argument("--output-json", default="data/scrapped/rcsb_hits.json")
 	parser.add_argument("--polite-delay", type=float, default=0.25)
 	parser.add_argument("--debug", action="store_true")
 	parser.set_defaults(download=True)
@@ -419,19 +422,17 @@ def main() -> None:
 		entry_ids=entry_ids,
 		rfree_min=args.rfree_min,
 		rfree_max=args.rfree_max,
-		plddt_min=args.plddt_min,
 		download=args.download,
 		output_dir=args.output_dir,
 		polite_delay=args.polite_delay,
 		debug=args.debug,
 	)
 
-	# Rank: resolution asc, R-free asc, AlphaFold pLDDT desc
+	# Rank: resolution asc, R-free asc
 	records.sort(
 		key=lambda r: (
 			r.resolution if r.resolution is not None else 99.0,
 			r.r_free if r.r_free is not None else 99.0,
-			-(r.alphafold_plddt if r.alphafold_plddt is not None else 0.0),
 		)
 	)
 
