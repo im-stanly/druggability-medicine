@@ -18,3 +18,49 @@ intermediate_protein_cifs:
 protein_structure_dataset:
   type: druggability.datasets.protein_dataset.MmcifPairedDataset
   root_path: data/02_intermediate/proteins/
+
+protein_ligand_dataset:
+    type: druggability.datasets.protein_ligand_dataset.ProteinLigandPairsDataset
+    root_path: data/01_raw/protein_ligand_raw/
+
+p2rank_pockets:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/p2rank_pockets.csv
+  save_args:
+    index: false
+
+labeled_pockets:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/labeled_pockets.csv
+  save_args:
+    index: false
+
+pocket_features:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/pocket_features.csv
+  save_args:
+    index: false
+
+pocket_model_metrics:
+  type: json.JSONDataset
+  filepath: data/08_reporting/pocket_model_metrics.json
+
+pocket_xgb_model:
+  type: pickle.PickleDataset
+  filepath: data/06_models/pocket_xgb_model.pkl
+
+pocket_train_table:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/pocket_train_table.csv
+  save_args:
+    index: false
+
+pocket_test_table:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/pocket_test_table.csv
+  save_args:
+    index: false
+
+pocket_roc_curve:
+  type: matplotlib.MatplotlibDataset
+  filepath: data/08_reporting/pocket_roc_curve.png

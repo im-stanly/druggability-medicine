@@ -1,0 +1,18 @@
+# This is a boilerplate parameters config generated for pipeline 'extract_pockets'
+# using Kedro 1.3.0.
+#
+# Documentation for this file format can be found in "Parameters"
+# Link: https://docs.kedro.org/en/1.3.0/configuration/parameters.html
+
+p2rank:
+  # Path to p2rank_2.5.1 directory
+  p2rank_dir: /Users/miloszbargiel/studia/p2rank_2.5.1
+  # Optional explicit prank launcher (defaults to <p2rank_dir>/prank)
+  prank_bin: /Users/miloszbargiel/studia/p2rank_2.5.1/prank
+  # Optional: set JAVA_HOME if your system Java can't find a runtime
+  # java_home: /Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
+  threads: 4
+  # Optional: use a built-in profile like "alphafold" or point to a groovy config
+  # config: alphafold
+  # Disable visualization generation to speed up runs (set to 1 to enable)
+  visualizations: 0
