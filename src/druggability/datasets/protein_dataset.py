@@ -97,14 +97,6 @@ class MmcifPairedDataset(AbstractDataset):
             else:
                 io.save(os.path.join(protein_root_path, self._af_filename))
 
-    def _save_io(self, protein, out_path, select=None) -> None:
-        io = MMCIFIO()
-        io.set_structure(protein)
-        if select:
-            io.save(out_path, select=ResidueSelect(select))
-        else:
-            io.save(out_path)
-
 
     def _describe(self) -> dict[str, Any]:
         return {
