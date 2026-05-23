@@ -27,3 +27,7 @@ pocket_model:
   type: pickle.PickleDataset
   filepath: models/pocket_classifier.pkl
   backend: pickle
+
+scraping_summary:
+  type: json.JSONDataset
+  filepath: data/08_reporting/scraping_summary.json
