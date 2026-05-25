@@ -4,59 +4,171 @@
 
 ## Overview
 
-This is your new Kedro project, which was generated using `kedro 1.3.0`.
+Master's thesis project investigating whether AlphaFold-predicted protein structures
+are accurate enough to assess **druggability** of binding pockets. For a curated set
+of human proteins we collect both experimental ([RCSB PDB](https://www.rcsb.org))
+and predicted ([AlphaFold DB](https://alphafold.ebi.ac.uk)) structures, detect
+binding pockets, compare them, and train a classifier that predicts whether a pocket
+is druggable from geometric and physicochemical descriptors. The project is built
+on top of [Kedro](https://kedro.org) for pipeline orchestration.
 
-Take a look at the [Kedro documentation](https://docs.kedro.org) to get started.
+## Prerequisites
 
-## Rules and guidelines
+- **Python 3.13** — see `.python-version`. `pyproject.toml` accepts `>=3.10`, but
+  the lockfile is resolved against 3.13.
+- **[`uv`](https://docs.astral.sh/uv/)** — the package manager used throughout.
+  Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS / Linux)
+  or follow the [official installer instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
-In order to get the best out of the template:
+The current pipelines are pure Python — no JVM, Docker, or system libraries
+required. Pocket-detection tools (fpocket, P2Rank) will be needed once that step
+is integrated; see [Roadmap](#roadmap).
 
-* Don't remove any lines from the `.gitignore` file we provide
-* Make sure your results can be reproduced by following a data engineering convention
-* Don't commit data to your repository
-* Don't commit any credentials or your local configuration to your repository. Keep all your credentials and local configuration in `conf/local/`
+## Setup
 
-## How to install dependencies
+Clone the repository and install dependencies into a project-local virtual
+environment:
 
-To add a dependency run:
+```bash
+make init
+# equivalent to:
+#   uv init && uv sync --all-groups
+```
+
+For an existing checkout, re-sync after pulling changes:
+
+```bash
+make sync          # uv sync --all-groups
+```
+
+Verify the install:
+
+```bash
+uv run kedro info
+```
+
+You should see the pipelines `unzip` and `compare` listed.
+
+## Project layout
 
 ```
-uv add <dependency_name>
+src/druggability/
+  pipelines/
+    protein_unzip/      # decompress raw .cif.gz files
+    protein_compare/    # chain matching + sequence alignment + RMSD
+    protein_parsing/    # placeholder for downstream parsing
+  datasets/
+    protein_dataset.py  # MmcifPairedDataset (paired PDB + AlphaFold mmCIF)
+    path_dataset.py     # PathDataset (passes file paths through the catalog)
+  pipeline_registry.py
+conf/
+  base/                 # catalog.yml, parameters_*.yml, logging.yml
+  local/                # gitignored — local credentials / overrides
+data/
+  01_raw/proteins/      # committed sample data (PDB-*.cif.gz, LIG-*.cif.gz, AF-*.cif.gz)
+  02_intermediate/      # decompressed CIFs (output of `unzip` pipeline)
+  03_primary/           # matched PDB↔AlphaFold pairs
+  08_reporting/         # final outputs (e.g. protein_alignment_results.csv)
+notebooks/              # exploratory work (e.g. mmcif_parsing.ipynb)
+docs/pocket-finding/    # fpocket vs P2Rank comparison + sample outputs
+tests/                  # pytest suite
+scrappingData.py        # standalone RCSB scraper (see below)
 ```
 
-## How to run your Kedro pipeline
+## Running the pipelines
 
-You can run your Kedro project with:
+Run everything registered in `pipeline_registry.py`:
 
-```
+```bash
 uv run kedro run
 ```
 
-## How to test your Kedro project
+Run a specific pipeline:
 
-Have a look at the file `tests/test_run.py` for instructions on how to write your tests. You can run your tests as follows:
+```bash
+# Decompress data/01_raw/proteins/**/*.cif.gz into data/02_intermediate/proteins/
+uv run kedro run --pipeline=unzip
 
+# Match PDB↔AlphaFold chains, align them, write data/08_reporting/protein_alignment_results.csv
+uv run kedro run --pipeline=compare
 ```
-uv run pytest
+
+Alignment thresholds (chain identity cutoff, gap penalties) live in
+`conf/base/parameters_protein_compare.yml`. Catalog entries — input paths,
+intermediate locations, and the final CSV — are defined in `conf/base/catalog.yml`.
+
+Visualize the DAG:
+
+```bash
+uv run kedro viz
 ```
 
-You can configure the coverage threshold in your project's `pyproject.toml` file under the `[tool.coverage.report]` section.
+For interactive exploration (`context`, `catalog`, `pipelines` are pre-loaded):
 
-[Further information about project dependencies](https://docs.kedro.org/en/stable/kedro_project_setup/dependencies.html#project-specific-dependencies)
+```bash
+uv run kedro jupyter notebook
+uv run kedro ipython
+```
 
-## How to work with Kedro and notebooks
+## Fetching new data (optional)
 
-> Note: Using `uv run kedro jupyter` or `uv run kedro ipython` to run your notebook provides these variables in scope: `context`, 'session', `catalog`, and `pipelines`.
+`scrappingData.py` queries RCSB for human X-ray structures with bound non-water
+ligands and downloads the matching CIF files (plus a `rcsb_hits.json` manifest)
+into `data/01_raw/proteins/<ENTRY_ID>/`.
+
+> **Heads up:** the scraper imports `rcsbapi`, which is **not yet listed in
+> `pyproject.toml`**. Install it once before running:
 >
-> Jupyter, JupyterLab, and IPython are already included in the project requirements by default, so once you have run `pip install -r requirements.txt` you will not need to take any extra steps before you use them.
+> ```bash
+> uv add rcsbapi
+> ```
 
+Then:
 
-### How to ignore notebook output cells in `git`
-To automatically strip out all output cell contents before committing to `git`, you can use tools like [`nbstripout`](https://github.com/kynan/nbstripout). For example, you can add a hook in `.git/config` with `nbstripout --install`. This will run `nbstripout` before anything is committed to `git`.
+```bash
+uv run python scrappingData.py --help
+uv run python scrappingData.py --output-dir data/01_raw/proteins
+```
 
-> *Note:* Your output cells will be retained locally.
+AlphaFold structures (`AF-<UniProt>-*.cif.gz`) are currently fetched manually
+from [AlphaFold DB](https://alphafold.ebi.ac.uk) and dropped alongside the PDB
+file in the same protein folder. Automating this is on the roadmap.
 
-## Package your Kedro project
+## Testing & formatting
 
-[Further information about building project documentation and packaging your project](https://docs.kedro.org/en/stable/deploy/package_a_project/#package-an-entire-kedro-project)
+```bash
+make test      # uv run pytest
+make format    # uv run ruff format
+```
+
+Coverage settings live under `[tool.coverage.report]` in `pyproject.toml`.
+
+## Roadmap
+
+**Implemented**
+
+- RCSB scraper for human structures with bound ligands (`scrappingData.py`).
+- `unzip` pipeline — decompress paired PDB / AlphaFold mmCIF inputs.
+- `compare` pipeline — chain matching by sequence identity, structural
+  alignment, and per-pair RMSD reporting.
+
+**Planned**
+
+- Pocket detection on both PDB and AlphaFold structures using **fpocket** and/or
+  **P2Rank** — see `docs/pocket-finding/comparison.md`, `docs/pocket-finding/fpocket.md`,
+  and `docs/pocket-finding/p2rank.md` for a tool-by-tool comparison and sample
+  outputs.
+- Pocket descriptor extraction (volume, hydrophobicity, polarity, compactness).
+- Druggability classifier (logistic regression / random forest) trained on
+  PDBbind / DrugBank ligand–protein pairs.
+- pLDDT-based filtering of low-confidence AlphaFold regions before pocket
+  detection, and analysis of how prediction confidence affects druggability
+  agreement with experimental structures.
+
+## References
+
+- Kedro documentation — https://docs.kedro.org
+- AlphaFold Protein Structure Database — https://alphafold.ebi.ac.uk
+- RCSB Protein Data Bank — https://www.rcsb.org
+- In-repo notes: `docs/pocket-finding/comparison.md`, `docs/pocket-finding/fpocket.md`,
+  `docs/pocket-finding/p2rank.md`
