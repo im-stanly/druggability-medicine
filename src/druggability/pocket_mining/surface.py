@@ -68,7 +68,7 @@ def generate_surface_points(
 
             dist, nearest = tree.query(pt, k=1)
             r_near = VDW_RADII.get(protein.elements[nearest].upper(), 1.70)
-            if dist >= r_near:
+            if dist >= r_near + probe_radius:
                 candidates.append(pt)
 
     if not candidates:
