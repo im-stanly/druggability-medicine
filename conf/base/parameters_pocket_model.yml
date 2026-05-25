@@ -1,0 +1,5 @@
+# Parameters for the pocket_model pipeline
+pocket_model:
+  data_dir: data/scrapped/structures   # scraped PDB+ligand training data
+  model_path: models/pocket_classifier.pkl
+  n_points: 2000

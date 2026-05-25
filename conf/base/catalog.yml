@@ -18,3 +18,16 @@ intermediate_protein_cifs:
 protein_structure_dataset:
   type: druggability.datasets.protein_dataset.MmcifPairedDataset
   root_path: data/02_intermediate/proteins/
+
+pocket_model_metrics:
+  type: json.JSONDataset
+  filepath: data/08_reporting/pocket_model_metrics.json
+
+pocket_model:
+  type: pickle.PickleDataset
+  filepath: models/pocket_classifier.pkl
+  backend: pickle
+
+scraping_summary:
+  type: json.JSONDataset
+  filepath: data/08_reporting/scraping_summary.json
