@@ -14,8 +14,7 @@ def register_pipelines() -> dict[str, Pipeline]:
     Returns:
         A mapping from pipeline names to ``Pipeline`` objects.
     """
-    pipelines = find_pipelines(raise_errors=True)
-    pipelines["__default__"] = sum(pipelines.values())
+    pipelines = {}
     pipelines["unzip"] = create_protein_unzip_pipeline()
     pipelines["compare"] = create_protein_compare_pipeline()
     return pipelines
