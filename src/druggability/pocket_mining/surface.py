@@ -53,6 +53,8 @@ def generate_surface_points(
     coords = protein.coords
 
     surface_idx = _surface_atoms(protein, probe_radius)
+    if len(surface_idx) == 0:
+        surface_idx = np.arange(len(coords))
     tree = KDTree(coords)
     n_per_atom = max(2, 10 * n_points // len(surface_idx))
     candidates = []
