@@ -1,14 +1,26 @@
 import gzip
 import fsspec
-from Bio.PDB import MMCIFParser, Structure
+from Bio.PDB import MMCIFParser, Structure, MMCIFIO, Select
 from kedro.io import AbstractDataset
 from typing import Any, Dict
+import os
 
 import io
 from pathlib import Path
 from typing import Any, Generator
 
 from kedro.io import AbstractDataset
+
+
+class ResidueSelect(Select):
+    """Filter to keep only the specifically matched residues."""
+    def __init__(self, keep_residues):
+        self.keep_ids = {res.get_full_id() for res in keep_residues}
+
+    def accept_residue(self, residue):
+        if residue.get_full_id() in self.keep_ids:
+            return 1
+        return 0
 
 
 class MmcifPairedDataset(AbstractDataset):
@@ -57,11 +69,34 @@ class MmcifPairedDataset(AbstractDataset):
                 "af": self._parse(af_path, structure_id=f"{protein_name}_af"),
             }
 
-    def _save(self, data: Any) -> None:
-        raise NotImplementedError(
-            "MmcifPairedDataset is read-only. "
-            "Saving mmCIF structures is not supported."
-        )
+    def _save(self, data: list[dict]) -> None:
+        os.makedirs(self._root, exist_ok=True)
+        for protein_dict in data:
+            dirname = protein_dict["name"]
+            pdb_seq = protein_dict["pdb"]
+            af_seq = protein_dict["af"]
+            pdb_keep = protein_dict.get("keep_pdb")
+            af_keep = protein_dict.get("keep_af")
+            protein_root_path = self._root / dirname
+            os.makedirs(protein_root_path, exist_ok=True)
+
+            pdb_save_path = protein_root_path / self._pdb_filename
+            af_save_path = protein_root_path / self._af_filename
+
+            io = MMCIFIO()
+            io.set_structure(pdb_seq)
+
+            if pdb_keep:
+                io.save(os.path.join(protein_root_path, self._pdb_filename), select=ResidueSelect(pdb_keep))
+            else:
+                io.save(os.path.join(protein_root_path, self._pdb_filename))
+
+            io.set_structure(af_seq)
+            if af_keep:
+                io.save(os.path.join(protein_root_path, self._af_filename), select=ResidueSelect(af_keep))
+            else:
+                io.save(os.path.join(protein_root_path, self._af_filename))
+
 
     def _describe(self) -> dict[str, Any]:
         return {

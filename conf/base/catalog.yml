@@ -18,3 +18,11 @@ intermediate_protein_cifs:
 protein_structure_dataset:
   type: druggability.datasets.protein_dataset.MmcifPairedDataset
   root_path: data/02_intermediate/proteins/
+
+matched_protein_pairs_dataset:
+  type: druggability.datasets.protein_dataset.MmcifPairedDataset
+  root_path: data/03_primary/matched_protein_pairs/
+
+protein_alignment_results_dataset:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/protein_alignment_results.csv
