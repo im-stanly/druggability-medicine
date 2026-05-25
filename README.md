@@ -4,7 +4,7 @@
 
 ## Overview
 
-Master's thesis project investigating whether AlphaFold-predicted protein structures
+Project investigating whether AlphaFold-predicted protein structures
 are accurate enough to assess **druggability** of binding pockets. For a curated set
 of human proteins we collect both experimental ([RCSB PDB](https://www.rcsb.org))
 and predicted ([AlphaFold DB](https://alphafold.ebi.ac.uk)) structures, detect
