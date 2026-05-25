@@ -13,6 +13,7 @@ from kedro.pipeline import Node, Pipeline
 from .nodes import (
     evaluate_classifier,
     featurize_pockets,
+    featurize_pockets_rdkit_ecfp,
     label_pockets_by_ligand_distance,
     split_train_test,
     train_xgb_classifier,
@@ -43,9 +44,18 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="featurize_pockets",
             ),
             Node(
-                func=split_train_test,
+                func=featurize_pockets_rdkit_ecfp,
                 inputs=dict(
                     pocket_features="pocket_features",
+                    params="params:pocket_featurization",
+                ),
+                outputs="pocket_features_enhanced",
+                name="featurize_pockets_rdkit_ecfp",
+            ),
+            Node(
+                func=split_train_test,
+                inputs=dict(
+                    pocket_features="pocket_features_enhanced",
                     params="params:pocket_model",
                 ),
                 outputs=["pocket_train_table", "pocket_test_table"],

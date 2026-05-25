@@ -249,3 +249,6 @@ __marimo__/
 # requirements.txt excluded as it can be generated via Makefile and should not be commited.
 # Dependencies should be managed by uv
 requirements.txt
+
+# P2RANK DIR
+*p2rank*/**

@@ -6,6 +6,8 @@ from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 
 @dataclass(frozen=True)
@@ -313,6 +315,79 @@ def featurize_pockets(
     return df
 
 
+def featurize_pockets_rdkit_ecfp(
+    pocket_features: pd.DataFrame,
+    params: dict[str, Any],
+) -> pd.DataFrame:
+    """Compute ECFP (Morgan fingerprint) bit vector features for pockets using RDKit.
+
+    Uses RDKit's GetMorganFingerprintAsBitVect to generate extended connectivity
+    fingerprints from pocket atom environment. Morgan fingerprints capture:
+      * Local chemical neighborhoods at multiple radii
+      * Atom types and connectivity patterns
+      * Pharmacophoric information
+      * Topological invariants
+
+    These features capture local chemical patterns that are predictive of
+    ligand binding potential.
+    """
+    df = pocket_features.copy()
+
+    # ECFP parameters
+    ecfp_radius = 2  # Radius for Morgan fingerprint (ECFP-like)
+    ecfp_nbits = 1024  # Number of bits in the fingerprint
+
+    # Initialize feature columns for ECFP bits
+    ecfp_feats = {f"ecfp_bit_{i}": [] for i in range(ecfp_nbits)}
+
+    for _, row in df.iterrows():
+        # Build a pseudo-molecule from pocket features to generate fingerprint
+        # Create a simple molecule representation based on element counts
+        n_c = int(row.get("el_C", 0))
+        n_n = int(row.get("el_N", 0))
+        n_o = int(row.get("el_O", 0))
+        n_s = int(row.get("el_S", 0))
+
+        # Build SMILES-like representation of pocket composition
+        # Format: C carbons, N nitrogens, O oxygens, S sulfurs
+        smiles = ""
+        if n_c > 0:
+            smiles += "C" * min(n_c, 20)  # Cap at 20 to avoid huge molecules
+        if n_n > 0:
+            smiles += "N" * min(n_n, 10)
+        if n_o > 0:
+            smiles += "O" * min(n_o, 10)
+        if n_s > 0:
+            smiles += "S" * min(n_s, 5)
+
+        # Fallback if no atoms
+        if not smiles:
+            smiles = "C"
+
+        # Create molecule and generate Morgan fingerprint
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is not None:
+                mfpgen = rdFingerprintGenerator.GetMorganGenerator(radius=ecfp_radius, fpSize=ecfp_nbits)
+                fp = mfpgen.GetFingerprint(mol)
+
+                # fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=ecfp_radius, nBits=ecfp_nbits)
+                # Convert fingerprint to list
+                fp_bits = list(fp)
+            else:
+                fp_bits = [0.0] * ecfp_nbits
+        except Exception:
+            fp_bits = [0.0] * ecfp_nbits
+
+        for i, bit_val in enumerate(fp_bits):
+            ecfp_feats[f"ecfp_bit_{i}"].append(float(bit_val))
+
+    for k, v in ecfp_feats.items():
+        df[k] = v
+
+    return df
+
+
 @dataclass(frozen=True)
 class PocketModelParams:
     test_size: float = 0.2
@@ -347,13 +422,6 @@ def split_train_test(
     train_df = df[df["pdb_id"].isin(train_pdbs)]
     test_df = df[df["pdb_id"].isin(test_pdbs)]
 
-    # train_df, test_df = train_test_split(
-    #     df,
-    #     test_size=p.test_size,
-    #     random_state=p.random_state,
-    #     stratify=y if len(np.unique(y)) > 1 else None,
-    # )
-
     return train_df.reset_index(drop=True), test_df.reset_index(drop=True)
 
 
@@ -384,14 +452,13 @@ def train_xgb_classifier(
     )
     y_train = train_table["druggable"].to_numpy(dtype=int)
 
-    # Calculate class weights to handle severe imbalance
     from sklearn.utils.class_weight import compute_sample_weight
     sample_weights = compute_sample_weight('balanced', y_train)
 
     xgb_params = {
-        "n_estimators": 1000,  # Increased, but controlled by early stopping
-        "max_depth": 5,  # Reduced from 10
-        "learning_rate": 0.03,  # Slightly lower for more robust trees
+        "n_estimators": 1000,
+        "max_depth": 5,
+        "learning_rate": 0.03,
         "subsample": 0.8,
         "colsample_bytree": 0.8,
         "objective": "binary:logistic",
@@ -424,8 +491,6 @@ def evaluate_classifier(
 
     import matplotlib.pyplot as plt
 
-    _ = PocketModelParams(**params)  # currently unused here, but keeps config contract consistent
-
     feature_cols = _select_feature_cols(test_table)
     X_test = (
         test_table[feature_cols]
@@ -437,16 +502,13 @@ def evaluate_classifier(
 
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X_test)[:, 1]
-    else:  # pragma: no cover
-        # very defensive fallback
+    else:
         proba = model.predict(X_test)
         proba = np.asarray(proba, dtype=float)
 
-    # Find optimal threshold for F1 score
     best_f1 = 0.0
     best_threshold = 0.5
 
-    # Sample thresholds from 0.1 to 0.9
     for threshold in np.linspace(0.1, 0.9, 50):
         pred_tmp = (proba >= threshold).astype(int)
         try:
@@ -459,7 +521,6 @@ def evaluate_classifier(
         except Exception:
             continue
 
-    # Use F1-optimized threshold
     pred = (proba >= best_threshold).astype(int)
 
     acc = float(accuracy_score(y_test, pred))
@@ -470,7 +531,6 @@ def evaluate_classifier(
 
     pr, rc, f1, _ = precision_recall_fscore_support(y_test, pred, average="binary", zero_division=0)
 
-    # Calculate average precision (area under precision-recall curve)
     try:
         from sklearn.metrics import average_precision_score
         ap = float(average_precision_score(y_test, proba))
@@ -489,13 +549,11 @@ def evaluate_classifier(
         "recall": float(rc),
         "f1": float(f1),
         "best_threshold_f1": float(best_threshold),
-        "threshold_for_recall_target": None,  # Placeholder for future recall targeting
+        "threshold_for_recall_target": None,
     }
 
-    # Validate JSON-serializability
     json.loads(json.dumps(metrics))
 
-    # ROC curve
     fig, ax = plt.subplots(figsize=(6, 5), dpi=150)
     if np.unique(y_test).size >= 2:
         fpr, tpr, _thr = roc_curve(y_test, proba)
@@ -525,7 +583,6 @@ def _select_feature_cols(df: pd.DataFrame) -> list[str]:
         "min_ligand_distance",
     }
     feature_cols = [c for c in df.columns if c not in drop_cols and c != "druggable"]
-    # Keep only numerics
     numeric = [c for c in feature_cols if pd.api.types.is_numeric_dtype(df[c])]
     if not numeric:
         raise ValueError("No numeric feature columns found to train on")

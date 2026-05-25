@@ -17,6 +17,11 @@ In order to get the best out of the template:
 * Don't commit data to your repository
 * Don't commit any credentials or your local configuration to your repository. Keep all your credentials and local configuration in `conf/local/`
 
+## P2Rank setup
+The project uses P2Rank for pocket detection. In order to setup the P2Rank download the binary from [P2Rank releases](https://github.com/rdk/p2rank/releases). 
+
+Put the downloaded binary in the root folder of the project. If done correctly the `extract_pockets` pipeline should run without any issues.
+
 ## How to install dependencies
 
 To add a dependency run:

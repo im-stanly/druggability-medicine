@@ -6,9 +6,9 @@
 
 p2rank:
   # Path to p2rank_2.5.1 directory
-  p2rank_dir: /Users/miloszbargiel/studia/p2rank_2.5.1
+  p2rank_dir: ./p2rank_2.5.1
   # Optional explicit prank launcher (defaults to <p2rank_dir>/prank)
-  prank_bin: /Users/miloszbargiel/studia/p2rank_2.5.1/prank
+  prank_bin: ./p2rank_2.5.1/prank
   # Optional: set JAVA_HOME if your system Java can't find a runtime
   # java_home: /Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
   threads: 4
