@@ -19,8 +19,7 @@ from druggability.pocket_mining.constants import POCKET_RADIUS, NON_POCKET_RADIU
 logger = logging.getLogger(__name__)
 
 
-def train_pocket_classifier(data_dir: str, model_path: str,
-                            n_points: int = 2000) -> dict:
+def train_pocket_classifier(data_dir: str, n_points: int = 2000) -> tuple[dict, PocketClassifier]:
 
     data_dir = Path(data_dir)
     logger.info("Collecting training data from %s ...", data_dir)
@@ -111,10 +110,6 @@ def train_pocket_classifier(data_dir: str, model_path: str,
         logger.info("  leave-one-out f1: %.3f ± %.3f",
                     f1_scores.mean(), f1_scores.std())
 
-    # ── save ───────────────────────────────────────────────────────
-    clf.save(model_path)
-    logger.info("Model saved → %s", model_path)
-
     top = clf.importances()[:5]
     logger.info("Top features: %s",
                 ", ".join(f"{f['feature']}({f['importance']:.3f})" for f in top))
@@ -131,4 +126,4 @@ def train_pocket_classifier(data_dir: str, model_path: str,
         "train_f1": train_scores["f1"],
         "train_time_s": train_time,
         **cv_results,
-    }
+    }, clf

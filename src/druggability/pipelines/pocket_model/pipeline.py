@@ -11,10 +11,9 @@ def create_pipeline(**kwargs) -> Pipeline:
             func=train_pocket_classifier,
             inputs=[
                 "params:pocket_model.data_dir",
-                "params:pocket_model.model_path",
                 "params:pocket_model.n_points",
             ],
-            outputs="pocket_model_metrics",
+            outputs=["pocket_model_metrics", "pocket_model"],
             name="train_pocket_classifier_node",
         ),
     ])
