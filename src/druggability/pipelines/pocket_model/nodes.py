@@ -5,7 +5,9 @@ import time
 from pathlib import Path
 
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score, GroupKFold, LeaveOneGroupOut
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from druggability.pocket_mining.parser import parse_cif, get_ligand_atoms
@@ -79,13 +81,21 @@ def train_pocket_classifier(data_dir: str, model_path: str,
 
     # ── cross-validate (by protein, not by point — no leakage) ─────
     logger.info("Group 5-fold CV (splitting by protein) ...")
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X)
+    cv_estimator = Pipeline([
+        ("scaler", StandardScaler()),
+        ("rf", RandomForestClassifier(
+            n_estimators=clf.n_estimators,
+            max_depth=clf.max_depth,
+            class_weight=clf.class_weight,
+            random_state=clf.random_state,
+            n_jobs=-1,
+        )),
+    ])
     cv = GroupKFold(n_splits=5)
 
     cv_results = {}
     for metric in ("accuracy", "roc_auc", "f1"):
-        scores = cross_val_score(clf.model, Xs, y, groups=groups,
+        scores = cross_val_score(cv_estimator, X, y, groups=groups,
                                  cv=cv, scoring=metric)
         cv_results[f"cv_{metric}_mean"] = float(scores.mean())
         cv_results[f"cv_{metric}_std"] = float(scores.std())
@@ -94,7 +104,7 @@ def train_pocket_classifier(data_dir: str, model_path: str,
     # ── leave-one-protein-out (hardest test) ───────────────────────
     if n_proteins <= 50:
         logo = LeaveOneGroupOut()
-        f1_scores = cross_val_score(clf.model, Xs, y, groups=groups,
+        f1_scores = cross_val_score(cv_estimator, X, y, groups=groups,
                                     cv=logo, scoring="f1")
         cv_results["cv_leave_one_out_f1_mean"] = float(f1_scores.mean())
         cv_results["cv_leave_one_out_f1_std"] = float(f1_scores.std())
