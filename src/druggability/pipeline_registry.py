@@ -19,10 +19,9 @@ def register_pipelines() -> dict[str, Pipeline]:
     compare_pipeline = create_protein_compare_pipeline()
     extract_pockets_pipeline = create_extract_pockets_pipeline()
     model_pipeline = create_pocket_ml_pipeline()
-    train_model_pipeline = extract_pockets_pipeline + model_pipeline
+    data_and_model_pipeline = extract_pockets_pipeline + model_pipeline
 
-    pipelines = {"__default__": train_model_pipeline,
-                 "model_training": train_model_pipeline,
+    pipelines = {"__default__": data_and_model_pipeline,
                  "unzip": unzip_pipeline,
                  "compare": compare_pipeline,
                  "extract_pockets": extract_pockets_pipeline,

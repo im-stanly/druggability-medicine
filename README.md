@@ -99,7 +99,7 @@ scrappingData.py        # standalone RCSB scraper (see below)
 
 ## Running the pipelines
 
-Run default pipeline from `pipeline_registry.py` (`model_train`):
+Run default pipeline from `pipeline_registry.py` (parse downloaded data and train the model):
 
 ```bash
 uv run kedro run
@@ -115,7 +115,7 @@ uv run kedro run --pipeline=unzip
 uv run kedro run --pipeline=compare
 
 # Train the model on downloaded protein-ligand pairs 
-uv run kedro run --pipeline=model_training
+uv run kedro run --pipeline=pocket_ml
 ```
 
 AlphaFold structures (`AF-<UniProt>-*.cif.gz`) are currently fetched manually
