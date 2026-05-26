@@ -19,10 +19,34 @@ on top of [Kedro](https://kedro.org) for pipeline orchestration.
 - **[`uv`](https://docs.astral.sh/uv/)** — the package manager used throughout.
   Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS / Linux)
   or follow the [official installer instructions](https://docs.astral.sh/uv/getting-started/installation/).
+- **[`P2Rank`](https://github.com/rdk/p2rank)** — for pocket detection (see below).
 
-The current pipelines are pure Python — no JVM, Docker, or system libraries
-required. Pocket-detection tools (fpocket, P2Rank) will be needed once that step
-is integrated; see [Roadmap](#roadmap).
+
+## P2Rank setup
+The project uses P2Rank for pocket detection. In order to setup the P2Rank download the binary from [P2Rank releases](https://github.com/rdk/p2rank/releases).
+
+Put the downloaded binary in the root folder of the project. If done correctly the `extract_pockets` pipeline should run without any issues.
+
+
+## Training data setup
+
+The pipeline needs a protein-ligand pair dataset to train the druggability classifier. 
+The current implementation expects protein-ligand pairs in the `data/01_raw/protein_ligand_raw/` directory,
+where each protein has its own subfolder containing the corresponding PDB and ligand mmcif files. 
+
+In order to download the data use a script `scrappingData.py` that scrapes the RCSB PDB for human X-ray structures with bound non-water ligands. The script will download the matching CIF files (plus a `rcsb_hits.json` manifest) into `data/01_raw/protein_ligand_raw/<ENTRY_ID>/`.
+
+You can control the output using various command-line arguments, e.g. to specify a different output directory and select only data that is not older than a certain release date:
+
+```bash
+uv run python scrappingData.py --output-dir data/01_raw/protein_ligand_raw --years 8 # only include structures released in the last 8 years
+```
+
+To see other options, run:
+
+```bash
+uv run python scrappingData.py --help
+```
 
 ## Setup
 
@@ -46,14 +70,6 @@ Verify the install:
 ```bash
 uv run kedro info
 ```
-
-## P2Rank setup
-The project uses P2Rank for pocket detection. In order to setup the P2Rank download the binary from [P2Rank releases](https://github.com/rdk/p2rank/releases). 
-
-Put the downloaded binary in the root folder of the project. If done correctly the `extract_pockets` pipeline should run without any issues.
-
-## How to install dependencies
-You should see the pipelines `unzip` and `compare` listed.
 
 ## Project layout
 
@@ -83,7 +99,7 @@ scrappingData.py        # standalone RCSB scraper (see below)
 
 ## Running the pipelines
 
-Run everything registered in `pipeline_registry.py`:
+Run default pipeline from `pipeline_registry.py` (`model_train`):
 
 ```bash
 uv run kedro run
@@ -97,43 +113,9 @@ uv run kedro run --pipeline=unzip
 
 # Match PDB↔AlphaFold chains, align them, write data/08_reporting/protein_alignment_results.csv
 uv run kedro run --pipeline=compare
-```
 
-Alignment thresholds (chain identity cutoff, gap penalties) live in
-`conf/base/parameters_protein_compare.yml`. Catalog entries — input paths,
-intermediate locations, and the final CSV — are defined in `conf/base/catalog.yml`.
-
-Visualize the DAG:
-
-```bash
-uv run kedro viz
-```
-
-For interactive exploration (`context`, `catalog`, `pipelines` are pre-loaded):
-
-```bash
-uv run kedro jupyter notebook
-uv run kedro ipython
-```
-
-## Fetching new data (optional)
-
-`scrappingData.py` queries RCSB for human X-ray structures with bound non-water
-ligands and downloads the matching CIF files (plus a `rcsb_hits.json` manifest)
-into `data/01_raw/proteins/<ENTRY_ID>/`.
-
-> **Heads up:** the scraper imports `rcsbapi`, which is **not yet listed in
-> `pyproject.toml`**. Install it once before running:
->
-> ```bash
-> uv add rcsbapi
-> ```
-
-Then:
-
-```bash
-uv run python scrappingData.py --help
-uv run python scrappingData.py --output-dir data/01_raw/proteins
+# Train the model on downloaded protein-ligand pairs 
+uv run kedro run --pipeline=model_training
 ```
 
 AlphaFold structures (`AF-<UniProt>-*.cif.gz`) are currently fetched manually
