@@ -1,0 +1,19 @@
+pocket_labeling:
+  # Pocket is labeled druggable (1) if it's within this distance to at least one ligand centroid
+  max_ligand_distance_angstrom: 6.0
+
+pocket_featurization:
+  # Radius for collecting protein atoms around a pocket centroid
+  neighborhood_radius_angstrom: 6.0
+
+pocket_model:
+  test_size: 0.2
+  random_state: 42
+  xgb:
+    n_estimators: 300
+    max_depth: 5
+    learning_rate: 0.05
+    subsample: 0.9
+    colsample_bytree: 0.9
+    reg_lambda: 1.0
+

@@ -21,7 +21,11 @@ dependencies = [
     "biopython>=1.87",
     "rdkit>=2025.9.6",
     "py3dmol>=2.5.4",
-    "kedro-datasets>=9.3.0",
+    "kedro-datasets[matplotlib,matplotlib-matplotlibdataset]>=9.3.0",
+    "rcsb-api",
+    "tqdm>=4.66",
+    "xgboost>=2.0",
+    "matplotlib>=3.8",
 ]
 
 [project.scripts]

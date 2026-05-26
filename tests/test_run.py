@@ -16,12 +16,18 @@ from kedro.framework.startup import bootstrap_project
 
 class TestKedroRun:
     def test_kedro_run_no_pipeline(self):
-        # This example test expects a pipeline run failure, since
-        # the default project template contains no pipelines.
+        # This repo's pipeline discovery can vary by environment/Kedro version.
+        # When no pipelines are discoverable, Kedro may report either:
+        #   * "Pipeline contains no nodes..."
+        #   * "Pipeline '<name>' not found"
         bootstrap_project(Path.cwd())
 
         with pytest.raises(Exception) as excinfo:
             with KedroSession.create(project_path=Path.cwd()) as session:
                 session.run()
 
-        assert "Pipeline contains no nodes" in str(excinfo.value)
+        msg = str(excinfo.value)
+        assert (
+            "Pipeline contains no nodes" in msg
+            or ("Pipeline" in msg and "not found" in msg)
+        )

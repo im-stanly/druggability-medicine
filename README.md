@@ -47,6 +47,12 @@ Verify the install:
 uv run kedro info
 ```
 
+## P2Rank setup
+The project uses P2Rank for pocket detection. In order to setup the P2Rank download the binary from [P2Rank releases](https://github.com/rdk/p2rank/releases). 
+
+Put the downloaded binary in the root folder of the project. If done correctly the `extract_pockets` pipeline should run without any issues.
+
+## How to install dependencies
 You should see the pipelines `unzip` and `compare` listed.
 
 ## Project layout

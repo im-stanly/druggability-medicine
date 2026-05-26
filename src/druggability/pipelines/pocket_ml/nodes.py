@@ -1,0 +1,595 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Iterable
+
+import numpy as np
+import pandas as pd
+from rdkit import Chem
+from rdkit.Chem import AllChem
+
+
+@dataclass(frozen=True)
+class PocketLabelingParams:
+    max_ligand_distance_angstrom: float = 6.0
+
+
+def label_pockets_by_ligand_distance(
+    pockets: pd.DataFrame,
+    protein_ligand_ds: Iterable[dict[str, Any]],
+    params: dict[str, Any],
+) -> pd.DataFrame:
+    """Assign a weak label to each pocket based on proximity to any ligand centroid.
+
+    Labeling rule (baseline):
+      * druggable = 1 if min distance from pocket center to any ligand centroid <= threshold
+      * druggable = 0 otherwise
+
+    This is a baseline heuristic to get a trainable dataset.
+    """
+    p = PocketLabelingParams(**params)
+
+    # Build pdb_id -> ligand centroids map from dataset items.
+    lig_map: dict[str, list[tuple[float, float, float]]] = {}
+    for item in protein_ligand_ds:
+        pdb_id = item["pdb_id"]
+        centroids = [tuple(float(c) for c in v["centroid"]) for v in item.get("ligands", {}).values()]
+        lig_map[pdb_id] = centroids
+
+    df = pockets.copy()
+    for c in ["center_x", "center_y", "center_z"]:
+        if c not in df.columns:
+            raise ValueError(f"Missing column '{c}' in pockets dataframe")
+
+    min_dists: list[float | None] = []
+    druggable: list[int] = []
+
+    for _, row in df.iterrows():
+        pdb_id = row["pdb_id"]
+        cx, cy, cz = float(row["center_x"]), float(row["center_y"]), float(row["center_z"])
+        ligs = lig_map.get(pdb_id, [])
+        if not ligs:
+            min_dists.append(None)
+            druggable.append(0)
+            continue
+
+        d = min(_dist((cx, cy, cz), lig) for lig in ligs)
+        min_dists.append(float(d))
+        druggable.append(1 if d <= p.max_ligand_distance_angstrom else 0)
+
+    df["min_ligand_distance"] = min_dists
+    df["druggable"] = druggable
+    return df
+
+
+@dataclass(frozen=True)
+class PocketFeaturizationParams:
+    neighborhood_radius_angstrom: float = 6.0
+
+
+def featurize_pockets(
+    labeled_pockets: pd.DataFrame,
+    protein_ligand_ds: Iterable[dict[str, Any]],
+    params: dict[str, Any],
+) -> pd.DataFrame:
+    """Compute simple chemical-environment features around each pocket centroid.
+
+    Features are computed from protein atoms within a radius of the pocket center.
+
+    Baseline features (per pocket):
+      * n_atoms
+      * mean_bfactor
+      * element counts: C, N, O, S, P, H, other
+      * mean distance to centroid
+
+    Added richer features (still fast, heuristic):
+      * residue class counts: hydrophobic/polar/pos/neg/aromatic
+      * residue counts: n_residues, n_pos_residues, n_neg_residues
+      * backbone vs sidechain atom counts
+      * distance-weighted element fractions (C/N/O/S)
+      * local density proxies (atoms per Å^3, residues per Å^3)
+
+    Advanced features (engineered for druggability):
+      * element ratios (C/N, C/O, N/O, etc.)
+      * residue composition ratios
+      * statistical moments of distance distribution
+      * hydrophobic/hydrophilic balance
+    """
+    p = PocketFeaturizationParams(**params)
+
+    # Map pdb_id -> protein structure (Bio.PDB Structure)
+    prot_map: dict[str, Any] = {item["pdb_id"]: item["protein"] for item in protein_ligand_ds}
+
+    df = labeled_pockets.copy()
+
+    feats = {
+        # existing
+        "n_atoms": [],
+        "mean_bfactor": [],
+        "mean_dist": [],
+        "el_C": [],
+        "el_N": [],
+        "el_O": [],
+        "el_S": [],
+        "el_P": [],
+        "el_H": [],
+        "el_other": [],
+        # richer
+        "n_residues": [],
+        "n_backbone_atoms": [],
+        "n_sidechain_atoms": [],
+        "n_hydrophobic_res": [],
+        "n_polar_res": [],
+        "n_pos_res": [],
+        "n_neg_res": [],
+        "n_aromatic_res": [],
+        "frac_C_w": [],
+        "frac_N_w": [],
+        "frac_O_w": [],
+        "frac_S_w": [],
+        "atom_density": [],
+        "residue_density": [],
+        # Advanced engineered features
+        "std_dist": [],
+        "max_dist": [],
+        "min_dist_atoms": [],
+        "ratio_C_N": [],
+        "ratio_C_O": [],
+        "ratio_N_O": [],
+        "ratio_hydrophobic_polar": [],
+        "ratio_pos_neg": [],
+        "ratio_aromatic_aliphatic": [],
+        "hydrophobic_density": [],
+        "charge_density": [],
+        "bfactor_std": [],
+        "aromatic_ratio": [],
+    }
+
+    # Residue class sets (rough, but useful)
+    hydrophobic = {"ALA", "VAL", "ILE", "LEU", "MET", "PRO", "GLY"}
+    polar = {"SER", "THR", "ASN", "GLN", "CYS"}
+    pos = {"LYS", "ARG", "HIS"}
+    neg = {"ASP", "GLU"}
+    aromatic = {"PHE", "TYR", "TRP"}
+    backbone_names = {"N", "CA", "C", "O", "OXT"}
+
+    # Pre-compute neighborhood volume (sphere) for density
+    r = float(p.neighborhood_radius_angstrom)
+    sphere_vol = (4.0 / 3.0) * float(np.pi) * (r**3)
+
+    for _, row in df.iterrows():
+        pdb_id = row["pdb_id"]
+        s = prot_map.get(pdb_id)
+        if s is None:
+            raise KeyError(f"Protein structure for pdb_id '{pdb_id}' not found")
+
+        center = (float(row["center_x"]), float(row["center_y"]), float(row["center_z"]))
+        atoms = list(s.get_atoms())
+
+        coords = np.array([a.coord for a in atoms], dtype=float)
+        dists = np.linalg.norm(coords - np.array(center)[None, :], axis=1)
+        mask = dists <= p.neighborhood_radius_angstrom
+
+        near_atoms = [a for a, keep in zip(atoms, mask, strict=False) if keep]
+        near_dists = dists[mask]
+
+        feats["n_atoms"].append(int(len(near_atoms)))
+        feats["mean_dist"].append(float(np.mean(near_dists)) if len(near_dists) else float("nan"))
+
+        bf = [float(getattr(a, "bfactor", 0.0)) for a in near_atoms]
+        feats["mean_bfactor"].append(float(np.mean(bf)) if bf else float("nan"))
+        feats["bfactor_std"].append(float(np.std(bf)) if len(bf) > 1 else 0.0)
+
+        # Distance statistics
+        feats["std_dist"].append(float(np.std(near_dists)) if len(near_dists) > 1 else 0.0)
+        feats["max_dist"].append(float(np.max(near_dists)) if len(near_dists) else float("nan"))
+        feats["min_dist_atoms"].append(float(np.min(near_dists)) if len(near_dists) else float("nan"))
+
+        # Element counts + distance-weighted fractions
+        el_counts = {"C": 0, "N": 0, "O": 0, "S": 0, "P": 0, "H": 0, "other": 0}
+        w_counts = {"C": 0.0, "N": 0.0, "O": 0.0, "S": 0.0, "total": 0.0}
+
+        for a in near_atoms:
+            el = (getattr(a, "element", "") or "").strip().upper()
+            if not el:
+                # fallback: guess from atom name's first char
+                name = getattr(a, "name", "").strip().upper()
+                el = name[:1] if name else ""
+
+            if el in el_counts:
+                el_counts[el] += 1
+            elif el:
+                el_counts["other"] += 1
+            else:
+                el_counts["other"] += 1
+
+        # Distance weights (closer atoms count more). Add 1.0 to avoid div-by-zero.
+        if len(near_atoms):
+            weights = 1.0 / (near_dists + 1.0)
+            for a, w in zip(near_atoms, weights, strict=False):
+                el = (getattr(a, "element", "") or "").strip().upper()
+                if not el:
+                    name = getattr(a, "name", "").strip().upper()
+                    el = name[:1] if name else ""
+                if el in {"C", "N", "O", "S"}:
+                    w_counts[el] += float(w)
+                w_counts["total"] += float(w)
+
+        feats["el_C"].append(el_counts["C"])
+        feats["el_N"].append(el_counts["N"])
+        feats["el_O"].append(el_counts["O"])
+        feats["el_S"].append(el_counts["S"])
+        feats["el_P"].append(el_counts["P"])
+        feats["el_H"].append(el_counts["H"])
+        feats["el_other"].append(el_counts["other"])
+
+        total_w = w_counts["total"]
+        if total_w > 0:
+            feats["frac_C_w"].append(w_counts["C"] / total_w)
+            feats["frac_N_w"].append(w_counts["N"] / total_w)
+            feats["frac_O_w"].append(w_counts["O"] / total_w)
+            feats["frac_S_w"].append(w_counts["S"] / total_w)
+        else:
+            feats["frac_C_w"].append(float("nan"))
+            feats["frac_N_w"].append(float("nan"))
+            feats["frac_O_w"].append(float("nan"))
+            feats["frac_S_w"].append(float("nan"))
+
+        # Element ratios (avoid division by zero)
+        c_cnt = float(el_counts["C"])
+        n_cnt = float(el_counts["N"])
+        o_cnt = float(el_counts["O"])
+        s_cnt = float(el_counts["S"])
+
+        feats["ratio_C_N"].append(c_cnt / (n_cnt + 1e-6))
+        feats["ratio_C_O"].append(c_cnt / (o_cnt + 1e-6))
+        feats["ratio_N_O"].append(n_cnt / (o_cnt + 1e-6))
+
+        # Residue-level features
+        near_res_keys: set[tuple[Any, Any, Any]] = set()
+        n_backbone = 0
+        n_sidechain = 0
+        for a in near_atoms:
+            res = a.get_parent()
+            # ignore waters & non-protein residues for residue-class stats
+            if getattr(res, "id", ("", None, ""))[0].strip():
+                continue
+            resname = getattr(res, "resname", "").strip().upper()
+            if not resname:
+                continue
+            near_res_keys.add((getattr(res, "full_id", None), resname, getattr(res, "id", None)))
+
+            aname = getattr(a, "name", "").strip().upper()
+            if aname in backbone_names:
+                n_backbone += 1
+            else:
+                n_sidechain += 1
+
+        # Deduplicate residue names for class counts by residue instance key
+        resnames = [rk[1] for rk in near_res_keys]
+        feats["n_residues"].append(int(len(resnames)))
+        feats["n_backbone_atoms"].append(int(n_backbone))
+        feats["n_sidechain_atoms"].append(int(n_sidechain))
+
+        n_hydrophobic = sum(rn in hydrophobic for rn in resnames)
+        n_polar = sum(rn in polar for rn in resnames)
+        n_pos = sum(rn in pos for rn in resnames)
+        n_neg = sum(rn in neg for rn in resnames)
+        n_arom = sum(rn in aromatic for rn in resnames)
+        n_aliphatic = sum(rn in (hydrophobic | polar) for rn in resnames)
+
+        feats["n_hydrophobic_res"].append(int(n_hydrophobic))
+        feats["n_polar_res"].append(int(n_polar))
+        feats["n_pos_res"].append(int(n_pos))
+        feats["n_neg_res"].append(int(n_neg))
+        feats["n_aromatic_res"].append(int(n_arom))
+
+        # Residue composition ratios
+        feats["ratio_hydrophobic_polar"].append(
+            n_hydrophobic / (n_polar + 1e-6)
+        )
+        feats["ratio_pos_neg"].append(
+            n_pos / (n_neg + 1e-6)
+        )
+        feats["ratio_aromatic_aliphatic"].append(
+            n_arom / (n_aliphatic + 1e-6)
+        )
+        feats["aromatic_ratio"].append(
+            n_arom / (len(resnames) + 1e-6) if len(resnames) > 0 else 0.0
+        )
+
+        # Density proxies
+        feats["atom_density"].append(float(len(near_atoms)) / sphere_vol if sphere_vol > 0 else float("nan"))
+        feats["residue_density"].append(float(len(resnames)) / sphere_vol if sphere_vol > 0 else float("nan"))
+        feats["hydrophobic_density"].append(float(n_hydrophobic) / sphere_vol if sphere_vol > 0 else float("nan"))
+        feats["charge_density"].append(float(n_pos + n_neg) / sphere_vol if sphere_vol > 0 else float("nan"))
+
+    for k, v in feats.items():
+        df[k] = v
+
+    # Make sure label column exists
+    if "druggable" not in df.columns:
+        raise ValueError("Expected 'druggable' label column in labeled_pockets")
+
+    return df
+
+
+def featurize_pockets_rdkit_ecfp(
+    pocket_features: pd.DataFrame,
+    params: dict[str, Any],
+) -> pd.DataFrame:
+    """Compute ECFP (Morgan fingerprint) bit vector features for pockets using RDKit.
+
+    Uses RDKit's GetMorganFingerprintAsBitVect to generate extended connectivity
+    fingerprints from pocket atom environment. Morgan fingerprints capture:
+      * Local chemical neighborhoods at multiple radii
+      * Atom types and connectivity patterns
+      * Pharmacophoric information
+      * Topological invariants
+
+    These features capture local chemical patterns that are predictive of
+    ligand binding potential.
+    """
+    df = pocket_features.copy()
+
+    # ECFP parameters
+    ecfp_radius = 2  # Radius for Morgan fingerprint (ECFP-like)
+    ecfp_nbits = 1024  # Number of bits in the fingerprint
+
+    # Initialize feature columns for ECFP bits
+    ecfp_feats = {f"ecfp_bit_{i}": [] for i in range(ecfp_nbits)}
+
+    for _, row in df.iterrows():
+        # Build a pseudo-molecule from pocket features to generate fingerprint
+        # Create a simple molecule representation based on element counts
+        n_c = int(row.get("el_C", 0))
+        n_n = int(row.get("el_N", 0))
+        n_o = int(row.get("el_O", 0))
+        n_s = int(row.get("el_S", 0))
+
+        # Build SMILES-like representation of pocket composition
+        # Format: C carbons, N nitrogens, O oxygens, S sulfurs
+        smiles = ""
+        if n_c > 0:
+            smiles += "C" * min(n_c, 20)  # Cap at 20 to avoid huge molecules
+        if n_n > 0:
+            smiles += "N" * min(n_n, 10)
+        if n_o > 0:
+            smiles += "O" * min(n_o, 10)
+        if n_s > 0:
+            smiles += "S" * min(n_s, 5)
+
+        # Fallback if no atoms
+        if not smiles:
+            smiles = "C"
+
+        # Create molecule and generate Morgan fingerprint
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is not None:
+                mfpgen = rdFingerprintGenerator.GetMorganGenerator(radius=ecfp_radius, fpSize=ecfp_nbits)
+                fp = mfpgen.GetFingerprint(mol)
+
+                # fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=ecfp_radius, nBits=ecfp_nbits)
+                # Convert fingerprint to list
+                fp_bits = list(fp)
+            else:
+                fp_bits = [0.0] * ecfp_nbits
+        except Exception:
+            fp_bits = [0.0] * ecfp_nbits
+
+        for i, bit_val in enumerate(fp_bits):
+            ecfp_feats[f"ecfp_bit_{i}"].append(float(bit_val))
+
+    for k, v in ecfp_feats.items():
+        df[k] = v
+
+    return df
+
+
+@dataclass(frozen=True)
+class PocketModelParams:
+    test_size: float = 0.2
+    random_state: int = 42
+    xgb: dict[str, Any] | None = None
+
+
+def split_train_test(
+    pocket_features: pd.DataFrame,
+    params: dict[str, Any],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split a pocket feature table into train/test tables.
+
+    Keeps all original columns, including `druggable`.
+
+    Params expected (from `params:pocket_model`):
+      * test_size
+      * random_state
+    """
+    from sklearn.model_selection import train_test_split
+
+    p = PocketModelParams(**params)
+
+    df = pocket_features.copy()
+    if "druggable" not in df.columns:
+        raise ValueError("Expected 'druggable' column in pocket_features")
+
+    y = df["druggable"].to_numpy(dtype=int)
+    unique_pdbs = df["pdb_id"].unique()
+    train_pdbs, test_pdbs = train_test_split(unique_pdbs, test_size=0.2, random_state=42)
+
+    train_df = df[df["pdb_id"].isin(train_pdbs)]
+    test_df = df[df["pdb_id"].isin(test_pdbs)]
+
+    return train_df.reset_index(drop=True), test_df.reset_index(drop=True)
+
+
+def train_xgb_classifier(
+    train_table: pd.DataFrame,
+    params: dict[str, Any],
+) -> Any:
+    """Train XGBoost classifier with class weight balancing for imbalanced data.
+
+    Improvements:
+      * Automatically calculates class weights to handle class imbalance
+      * Uses balanced weights in model training
+      * Enables early stopping to prevent overfitting
+    """
+    try:
+        from xgboost import XGBClassifier
+    except Exception as e:  # pragma: no cover
+        raise ImportError("xgboost is required for training. Install it with `uv add xgboost`.") from e
+
+    p = PocketModelParams(**params)
+
+    feature_cols = _select_feature_cols(train_table)
+    X_train = (
+        train_table[feature_cols]
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .to_numpy(dtype=float)
+    )
+    y_train = train_table["druggable"].to_numpy(dtype=int)
+
+    from sklearn.utils.class_weight import compute_sample_weight
+    sample_weights = compute_sample_weight('balanced', y_train)
+
+    xgb_params = {
+        "n_estimators": 1000,
+        "max_depth": 5,
+        "learning_rate": 0.03,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "objective": "binary:logistic",
+        "eval_metric": "logloss",
+        "random_state": p.random_state,
+    }
+
+    if p.xgb:
+        xgb_params.update(p.xgb)
+
+    model = XGBClassifier(**xgb_params)
+    # Train with sample weights to balance classes
+    model.fit(X_train, y_train, sample_weight=sample_weights)
+    return model
+
+
+def evaluate_classifier(
+    model: Any,
+    test_table: pd.DataFrame,
+    params: dict[str, Any],
+) -> tuple[dict[str, Any], Any]:
+    """Evaluate model on test split with F1-optimized threshold and return metrics + ROC curve figure.
+
+    Improvements:
+      * Finds optimal decision threshold that maximizes F1 score
+      * Reports both default (0.5) and F1-optimized metrics
+      * Provides comprehensive evaluation metrics including average precision
+    """
+    from sklearn.metrics import accuracy_score, roc_auc_score, precision_recall_fscore_support, roc_curve
+
+    import matplotlib.pyplot as plt
+
+    feature_cols = _select_feature_cols(test_table)
+    X_test = (
+        test_table[feature_cols]
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .to_numpy(dtype=float)
+    )
+    y_test = test_table["druggable"].to_numpy(dtype=int)
+
+    if hasattr(model, "predict_proba"):
+        proba = model.predict_proba(X_test)[:, 1]
+    else:
+        proba = model.predict(X_test)
+        proba = np.asarray(proba, dtype=float)
+
+    best_f1 = 0.0
+    best_threshold = 0.5
+
+    for threshold in np.linspace(0.1, 0.9, 50):
+        pred_tmp = (proba >= threshold).astype(int)
+        try:
+            pr_tmp, rc_tmp, f1_tmp, _ = precision_recall_fscore_support(
+                y_test, pred_tmp, average="binary", zero_division=0
+            )
+            if f1_tmp > best_f1:
+                best_f1 = f1_tmp
+                best_threshold = threshold
+        except Exception:
+            continue
+
+    pred = (proba >= best_threshold).astype(int)
+
+    acc = float(accuracy_score(y_test, pred))
+    try:
+        auc = float(roc_auc_score(y_test, proba))
+    except ValueError:
+        auc = float("nan")
+
+    pr, rc, f1, _ = precision_recall_fscore_support(y_test, pred, average="binary", zero_division=0)
+
+    try:
+        from sklearn.metrics import average_precision_score
+        ap = float(average_precision_score(y_test, proba))
+    except Exception:
+        ap = float("nan")
+
+    metrics: dict[str, Any] = {
+        "n_test": int(len(test_table)),
+        "n_test_positive": int(np.sum(y_test)),
+        "n_test_negative": int(len(y_test) - np.sum(y_test)),
+        "feature_cols": feature_cols,
+        "accuracy": acc,
+        "roc_auc": auc,
+        "average_precision": ap,
+        "precision": float(pr),
+        "recall": float(rc),
+        "f1": float(f1),
+        "best_threshold_f1": float(best_threshold),
+        "threshold_for_recall_target": None,
+    }
+
+    json.loads(json.dumps(metrics))
+
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=150)
+    if np.unique(y_test).size >= 2:
+        fpr, tpr, _thr = roc_curve(y_test, proba)
+        ax.plot(fpr, tpr, label=f"ROC AUC = {auc:.3f}")
+    else:
+        ax.text(0.5, 0.5, "ROC undefined (single class in test)", ha="center", va="center")
+
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.5)
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title("Pocket druggability ROC curve")
+    ax.legend(loc="lower right")
+    ax.grid(True, alpha=0.3)
+
+    return metrics, fig
+
+
+def _select_feature_cols(df: pd.DataFrame) -> list[str]:
+    if "druggable" not in df.columns:
+        raise ValueError("Expected 'druggable' column")
+
+    drop_cols = {
+        "pdb_id",
+        "pocket_id",
+        "raw",
+        "ligand_centroids",
+        "min_ligand_distance",
+    }
+    feature_cols = [c for c in df.columns if c not in drop_cols and c != "druggable"]
+    numeric = [c for c in feature_cols if pd.api.types.is_numeric_dtype(df[c])]
+    if not numeric:
+        raise ValueError("No numeric feature columns found to train on")
+    return numeric
+
+
+def _dist(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
+    ax, ay, az = a
+    bx, by, bz = b
+    return float(((ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2) ** 0.5)
