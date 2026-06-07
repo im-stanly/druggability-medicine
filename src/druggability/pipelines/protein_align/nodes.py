@@ -139,29 +139,44 @@ def predict_binding_pockets(partitions: Dict[str, Callable[[], Any]], p2rank_par
     # rglob("*.cif") searches the base directory and ALL subdirectories automatically
     staging_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(dataset_file, "w") as f:
-        for name, path_func in partitions.items():
-            path = Path(path_func()).resolve()
-            protein_name = path.parent.name 
-            source_type = path.stem
-            unique_name = f"{protein_name}_{source_type}.cif"
-            staged_path = staging_dir / unique_name
-            
-            # Copy the file to our temporary staging area
-            shutil.copy2(path, staged_path)
-            f.write(f"{staged_path}\n")
+    dataset_pdb = work_dir / "batch_pdb.ds"
+    dataset_af = work_dir / "batch_af.ds"
+    pdb_files = []
+    af_files = []
 
-    command = [
-        str(p2rank_exec),
-        "predict",
-        "-o", str(output_dir),    
-        str(dataset_file),
-    ]
+    # 1. Rozdzielenie plików na dwie grupy na podstawie 'stem'
+    for name, path_func in partitions.items():
+        path = Path(path_func()).resolve()
+        protein_name = path.parent.name 
+        source_type = path.stem
+        
+        unique_name = f"{protein_name}_{source_type}.cif"
+        staged_path = staging_dir / unique_name
+        
+        shutil.copy2(path, staged_path)
+        
+        if source_type.lower().startswith("af"):
+            af_files.append(str(staged_path))
+        else:
+            pdb_files.append(str(staged_path))
 
-    try:
-        subprocess.run(command, capture_output=True, text=True, check=True, timeout=300)
-    except subprocess.CalledProcessError as e:
-        print(f"P2Rank failed for {dataset_file}:\n{e.stderr}")
+    def run_p2rank(dataset_path, file_paths, extra_args):
+        if not file_paths:
+            return 
+        
+        with open(dataset_path, "w") as f:
+            f.write("\n".join(file_paths) + "\n")
+
+        command = [str(p2rank_exec), "predict"] + extra_args + ["-o", str(output_dir), str(dataset_path)]
+        
+        try:
+            subprocess.run(command, capture_output=True, text=True, check=True, timeout=300)
+            print(f"P2Rank success for {dataset_path.name}")
+        except subprocess.CalledProcessError as e:
+            print(f"P2Rank failed for {dataset_path.name}:\n{e.stderr}")
+
+    run_p2rank(dataset_pdb, pdb_files, []) 
+    run_p2rank(dataset_af, af_files, ["-c", "alphafold"])
 
     csv_files = list(output_dir.rglob("*_predictions.csv"))
     if not csv_files:

@@ -7,7 +7,7 @@ def create_pipeline(**kwargs) -> Pipeline:
     return Pipeline([
     Node(
         func=compare_af_pdb_pockets,
-        inputs=["predicted_pockets_dataset", "aligned_protein_pairs_dataset", "params:pocket_match_threshold"], 
+        inputs=["predicted_pockets_dataset", "aligned_protein_pairs_dataset", "params:pocket_match_threshold", "params:pocket_shared_residues_number"], 
         outputs=["pocket_comparison_metrics_dataset", "pocket_comparison_summary_dataset"],
         name="compare_pockets_node",
     ),
