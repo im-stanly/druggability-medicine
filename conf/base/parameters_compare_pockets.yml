@@ -1,5 +1,2 @@
-# This is a boilerplate parameters config generated for pipeline 'compare_pockets'
-# using Kedro 1.3.0.
-#
-# Documentation for this file format can be found in "Parameters"
-# Link: https://docs.kedro.org/en/1.3.0/configuration/parameters.html
+pocket_match_threshold: 6.0
+pocket_shared_residues_number: 3
