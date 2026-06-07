@@ -126,14 +126,14 @@ into `data/01_raw/proteins/<ENTRY_ID>/`.
 > `pyproject.toml`**. Install it once before running:
 >
 > ```bash
-> uv add rcsbapi
+> uv add rcsb-api
 > ```
 
 Then:
 
 ```bash
 uv run python scrappingData.py --help
-uv run python scrappingData.py --output-dir data/01_raw/proteins
+uv run python scrappingData.py --output-dir data/01_raw/protein_ligand_raw
 ```
 
 AlphaFold structures (`AF-<UniProt>-*.cif.gz`) are currently fetched manually
