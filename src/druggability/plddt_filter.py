@@ -6,7 +6,7 @@ P2Rank (BioJava) ignores zero-occupancy atoms, effectively hiding them
 from pocket detection while keeping the structure intact.
 
 Usage:
-    from plddt_filter import filter_cif
+    from druggability.plddt_filter import filter_cif
     filter_cif("input.cif.gz", "output.cif", threshold=70)
 """
 

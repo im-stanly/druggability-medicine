@@ -95,7 +95,7 @@ def run_p2rank_and_parse_pockets(
 
             # ── pLDDT filtering ──────────────────────────────────────
             if cfg.plddt_threshold > 0:
-                from plddt_filter import filter_cif
+                from druggability.plddt_filter import filter_cif
 
                 filtered_path = tmp_dir_p / f"filtered_{protein_path.name}"
                 filter_cif(protein_path, filtered_path, threshold=cfg.plddt_threshold)
