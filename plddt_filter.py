@@ -38,7 +38,6 @@ def filter_cif(
     lines = content.splitlines(keepends=True)
 
     # ── find _atom_site loop ─────────────────────────────────────────
-    header_start: int | None = None
     data_start: int | None = None
     bfactor_col: int | None = None
     occupancy_col: int | None = None
