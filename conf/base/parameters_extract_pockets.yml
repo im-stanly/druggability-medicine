@@ -16,3 +16,6 @@ p2rank:
   # config: alphafold
   # Disable visualization generation to speed up runs (set to 1 to enable)
   visualizations: 0
+  # pLDDT threshold for AlphaFold structures: atoms with pLDDT < this get
+  # occupancy=0 (effectively hidden from P2Rank). Set to 0 to disable.
+  plddt_threshold: 0.0
