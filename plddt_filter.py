@@ -81,7 +81,11 @@ def filter_cif(
     n_zeroed = 0
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    out_is_gz = output_path.suffix == ".gz"
+    opener = gzip.open if out_is_gz else open
+    mode = "wt" if out_is_gz else "w"
+
+    with opener(output_path, mode, encoding="utf-8") as f:
         # Write header (unchanged)
         for i in range(data_start):
             f.write(lines[i])
