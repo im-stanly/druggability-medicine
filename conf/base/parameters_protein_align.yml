@@ -5,8 +5,7 @@ aligner_cfg:
 
 match_threshold: 0.80
 
-pocket_probability_threshold: 0.02
-pocket_match_threshold: 8.0
+pocket_probability_threshold: 0.01
 p2rank:
   executable_path: "libs/p2rank/distro/prank"
   working_dir: "data/03_primary/p2rank_temp"
