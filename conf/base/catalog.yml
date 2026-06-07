@@ -48,3 +48,7 @@ pocket_comparison_metrics_dataset:
 pocket_comparison_summary_dataset:
   type: kedro_datasets.pandas.CSVDataset
   filepath: data/08_reporting/pocket_comparison_summary.csv
+
+hypothesis_verification_results:
+  type: json.JSONDataset
+  filepath: data/08_reporting/hypothesis_verification_results.json
