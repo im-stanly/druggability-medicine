@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 import math
 
-def compare_af_pdb_pockets(pockets_df: pd.DataFrame, protein_dataset, pocket_match_threshold: float) -> pd.DataFrame:
+def compare_af_pdb_pockets(pockets_df: pd.DataFrame, protein_dataset, pocket_match_threshold: float, pocket_shared_residues_number: int) -> pd.DataFrame:
     if pockets_df.empty:
         return pd.DataFrame(), pd.DataFrame() # Poprawka: Kedro oczekuje dwóch outputów wg sygnatury w return
 
@@ -31,7 +31,6 @@ def compare_af_pdb_pockets(pockets_df: pd.DataFrame, protein_dataset, pocket_mat
                 
                 pocket_rmsd = None
                 avg_plddt = None
-                shared_residues = []
                 
                 if pair_data:
                     pdb_residue_strings = str(pdb_row.residue_ids).split()
@@ -41,6 +40,21 @@ def compare_af_pdb_pockets(pockets_df: pd.DataFrame, protein_dataset, pocket_mat
                     sq_distances = []
                     plddt_scores = [] 
                     
+                    if len(shared_residues) < pocket_shared_residues_number:
+                        comparison_results.append({
+                            "protein_name": protein_name,
+                            "pdb_pocket_rank": pdb_row.rank,
+                            "af_pocket_rank": af_row["rank"],
+                            "pdb_probability": pdb_row.probability,
+                            "af_probability": af_row["probability"],
+                            "center_shift_A": center_distance,
+                            "pocket_backbone_rmsd_A": None,
+                            "avg_pocket_plddt": None, 
+                            "shared_residue_count": len(shared_residues),
+                            "match_status": f"Insufficient shared residues ({len(shared_residues)})"
+                        })
+                        continue
+
                     for res_str in shared_residues:
                         try:
                             chain_id, res_id = res_str.split("_")
