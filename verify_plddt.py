@@ -6,7 +6,7 @@ reduces false-positive pockets while preserving true binding sites.
 Test: For each Phase 1 protein (AF + PDB pair, not in training set):
   1. Parse AF structure → per-residue pLDDT (from B-factor)
   2. Parse PDB structure → ligand positions (ground truth binding sites)
-  3. Align structures (via mmilosz's protein_compare alignment)
+  3. Align structures (via Bio.PDB.Superimposer)
   4. For each AF residue, check:
      a. Is it low-pLDDT (< 70)?
      b. Is the corresponding PDB residue near a ligand (< 6 Å)?
