@@ -12,7 +12,10 @@ Usage:
 
 from __future__ import annotations
 
-import gzip, io, json, sys
+import gzip
+import io
+import json
+import sys
 from pathlib import Path
 
 import numpy as np
