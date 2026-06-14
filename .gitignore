@@ -252,3 +252,6 @@ requirements.txt
 
 # P2RANK DIR
 *p2rank*/**
+
+# Downloaded test data
+data/01_raw/proteins_fresh/

@@ -37,6 +37,8 @@ class P2RankConfig:
     config: str | None = None
     # Disable heavy visualization generation by default (faster)
     visualizations: int = 0
+    # pLDDT threshold: set occupancy=0 for atoms with pLDDT < this (0 = disabled)
+    plddt_threshold: float = 0.0
 
 
 def run_p2rank_and_parse_pockets(
@@ -91,8 +93,16 @@ def run_p2rank_and_parse_pockets(
             tmp_dir_p = Path(tmp_dir)
             in_path = tmp_dir_p / protein_path.name
 
-            # prank supports gzipped inputs too, but we isolate per-run inputs.
-            shutil.copy2(protein_path, in_path)
+            # ── pLDDT filtering ──────────────────────────────────────
+            if cfg.plddt_threshold > 0:
+                from plddt_filter import filter_cif
+
+                filtered_path = tmp_dir_p / f"filtered_{protein_path.name}"
+                filter_cif(protein_path, filtered_path, threshold=cfg.plddt_threshold)
+                shutil.copy2(filtered_path, in_path)
+            else:
+                shutil.copy2(protein_path, in_path)
+            # ─────────────────────────────────────────────────────────
 
             out_dir = tmp_dir_p / "out"
             out_dir.mkdir(parents=True, exist_ok=True)
