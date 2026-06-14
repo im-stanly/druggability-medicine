@@ -38,7 +38,6 @@ def filter_cif(
     lines = content.splitlines(keepends=True)
 
     # ── find _atom_site loop ─────────────────────────────────────────
-    header_start: int | None = None
     data_start: int | None = None
     bfactor_col: int | None = None
     occupancy_col: int | None = None
@@ -53,7 +52,6 @@ def filter_cif(
                 cand_headers.append(lines[j].strip())
                 j += 1
             if any(h.startswith("_atom_site.") for h in cand_headers):
-                header_start = i
                 data_start = j
                 headers = cand_headers
                 for ci, h in enumerate(headers):

@@ -128,18 +128,19 @@ def analyze_protein_dir(protein_dir: Path) -> list[dict]:
     af_xyz = np.array([af_ca[k] for k in common])
     pdb_xyz = np.array([pdb_ca[k] for k in common])
 
-    class A:
-        def __init__(self, c): self._c = c
-        def get_coord(self): return self._c
+    class _Atom:
+        def __init__(self, c):
+            self._c = c
+        def get_coord(self):
+            return self._c
     sup = Superimposer()
-    sup.set_atoms([A(v) for v in pdb_xyz], [A(v) for v in af_xyz])
+    sup.set_atoms([_Atom(v) for v in pdb_xyz], [_Atom(v) for v in af_xyz])
     rot, tran = sup.rotran
 
     # For each ligand, count atoms in PDB and AF
     for lig in ligands:
         pdb_count = count_nearby_atoms(pdb, lig["center"])
-        # Transform AF atoms? No — just check AF structure at the same position
-        # (structures are aligned, coordinates are in PDB frame now)
+        # Count AF atoms after transforming into the PDB frame
         af_count = 0
         for model in af:
             for chain in model:

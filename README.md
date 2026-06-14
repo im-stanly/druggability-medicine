@@ -52,6 +52,18 @@ The project uses P2Rank for pocket detection. In order to setup the P2Rank downl
 
 Put the downloaded binary in the root folder of the project. If done correctly the `extract_pockets` pipeline should run without any issues.
 
+**Java requirement:** P2Rank needs Java 17+. On macOS:
+```bash
+brew install openjdk@17
+```
+Set `java_home` in `conf/base/parameters_extract_pockets.yml` to your JDK path.
+
+**xgboost requirement:** the `pocket_ml` pipeline needs xgboost + OpenMP:
+```bash
+uv add xgboost
+brew install libomp
+```
+
 ## How to install dependencies
 You should see the pipelines `unzip` and `compare` listed.
 
@@ -97,6 +109,12 @@ uv run kedro run --pipeline=unzip
 
 # Match PDB↔AlphaFold chains, align them, write data/08_reporting/protein_alignment_results.csv
 uv run kedro run --pipeline=compare
+
+# Run P2Rank pocket detection on all training structures
+uv run kedro run --pipeline=extract_pockets
+
+# Train XGBoost druggability classifier on P2Rank-detected pockets
+uv run kedro run --pipeline=pocket_ml
 ```
 
 Alignment thresholds (chain identity cutoff, gap penalties) live in
@@ -115,6 +133,45 @@ For interactive exploration (`context`, `catalog`, `pipelines` are pre-loaded):
 uv run kedro jupyter notebook
 uv run kedro ipython
 ```
+
+### pLDDT filtering (optional)
+
+Before running P2Rank, you can filter out low-confidence AlphaFold regions
+by setting `plddt_threshold` in `conf/base/parameters_extract_pockets.yml`:
+
+```yaml
+p2rank:
+  plddt_threshold: 70.0   # atoms with pLDDT < 70 → occupancy=0 → hidden from P2Rank
+```
+
+Set to `0.0` (default) to disable. The filter only affects AlphaFold structures
+(where B-factor = pLDDT); PDB structures pass through unchanged.
+
+```bash
+uv run kedro run --pipeline=extract_pockets
+```
+
+### Hypothesis verification scripts
+
+Three standalone verification scripts (no Kedro needed):
+
+```bash
+# H1: pLDDT filtering reduces false-positive pockets
+uv run python verify_plddt.py
+
+# H2: Simple pocket descriptors (volume, hydrophobicity, polarity)
+#     classify druggable pockets with AUROC > 0.75
+uv run python verify_simple_classifier.py
+
+# H3: AlphaFold pockets are ~40% smaller than PDB pockets
+#     (no induced fit → narrower binding sites)
+uv run python verify_af_volume.py
+```
+
+Results are saved to `data/08_reporting/`:
+- `plddt_verification.json`
+- `simple_classifier_results.json`
+- `af_volume_comparison.json`
 
 ## Fetching new data (optional)
 
@@ -155,8 +212,14 @@ Coverage settings live under `[tool.coverage.report]` in `pyproject.toml`.
 
 - RCSB scraper for human structures with bound ligands (`scrappingData.py`).
 - `unzip` pipeline — decompress paired PDB / AlphaFold mmCIF inputs.
-- `compare` pipeline — chain matching by sequence identity, structural
+- `protein_compare` pipeline — chain matching by sequence identity, structural
   alignment, and per-pair RMSD reporting.
+- `extract_pockets` pipeline — P2Rank pocket detection on PDB structures with
+  optional pLDDT-based filtering of low-confidence AlphaFold regions.
+- `pocket_ml` pipeline — druggability classifier (XGBoost) trained on pocket
+  descriptors and ECFP fingerprints.
+- Hypothesis verification: pLDDT filtering, simple pocket classifier,
+  AF vs PDB pocket volume comparison.
 
 **Planned**
 
