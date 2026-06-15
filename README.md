@@ -16,8 +16,13 @@ is druggable from geometric and physicochemical descriptors. Built on [Kedro](ht
 - **[`uv`](https://docs.astral.sh/uv/)** — install per project docs.
 
 ## Setup
-
-Clone the repository and install dependencies into a project-local virtual
+Clone the repository using: 
+```bash
+git clone --recursive https://github.com/im-stanly/druggability-medicine.git
+# or with ssh
+git clone --recursive git@github.com:im-stanly/druggability-medicine.git
+```
+Install dependencies into a project-local virtual
 environment:
 
 ```bash
@@ -43,7 +48,7 @@ P2Rank is included as a git submodule under `libs/p2rank`. Do not add a built di
 Clone with submodules:
 
 ```bash
-git clone --recurse-submodules <repo-url>
+git clone --recursive 
 # or for an existing clone:
 git submodule update --init --recursive
 ```
@@ -67,19 +72,16 @@ To change these, edit `conf/base/parameters_extract_pockets.yml` and set `p2rank
 
 After building and configuring paths, run the extract_pockets pipeline.
 
-## How to install dependencies
-
-You should see the pipelines `unzip` and `compare` listed.
-
 ## Project layout
 
 ```
 src/druggability/
   pipelines/
-    protein_unzip/      # decompress raw .cif.gz files
-    protein_compare/    # chain matching + sequence alignment + RMSD
-    protein_parsing/    # downstream parsing utilities
+    compare_pockets/    # compare and match pockets between PDB and AlphaFold
     extract_pockets/    # P2Rank-based pocket detection (requires P2Rank distro)
+    pocket_ml/          # pocket machine-learning pipeline
+    protein_align/      # chain matching + sequence alignment + RMSD
+    protein_unzip/      # decompress raw .cif.gz files
   datasets/
     protein_dataset.py  # MmcifPairedDataset (paired PDB + AlphaFold mmCIF)
     path_dataset.py     # PathDataset (passes file paths through the catalog)
@@ -88,14 +90,29 @@ conf/
   base/                 # catalog.yml, parameters_*.yml, logging.yml
   local/                # gitignored — local credentials / overrides
 data/
-  01_raw/proteins/      # committed sample data
-  02_intermediate/      # decompressed CIFs
-  03_primary/           # matched PDB↔AlphaFold pairs
-  08_reporting/         # final outputs
-notebooks/
-  # exploratory work
-docs/pocket-finding/    # fpocket vs P2Rank comparison + sample outputs
-tests/                  # pytest suite
+  01_raw/                # raw inputs (protein_ligand_raw, proteins)
+  02_intermediate/       # decompressed CIFs and intermediate artifacts
+  03_primary/            # matched PDB ↔ AlphaFold pairs
+  04_feature/            # feature extraction outputs
+  05_model_input/
+  06_models/
+  07_model_output/
+  08_reporting/          # final outputs and reports
+  scrapped/              # scraped RCSB/AlphaFold hits and intermediate JSON
+docs/
+  pocket-finding/        # fpocket vs P2Rank comparison + examples
+libs/
+  p2rank/                # p2rank submodule (build produces distro/)
+notebooks/               # exploratory notebooks
+tests/                   # pytest suite and pipeline tests
+```
+
+Notes:
+- P2Rank is included as a git submodule under `libs/p2rank` and must be built
+  to produce the `distro` used by the `extract_pockets` pipeline.
+- Configuration is driven from `conf/base` with local overrides in `conf/local`.
+- Pipelines are registered in `src/druggability/pipeline_registry.py` and
+  executed via Kedro (invoked through `uv` in this project).
 ```
 
 ## Running the pipelines
@@ -111,14 +128,9 @@ Run a specific pipeline:
 ```bash
 uv run kedro run --pipeline=unzip
 uv run kedro run --pipeline=compare
+uv run kedro run --pipeline=align
 uv run kedro run --pipeline=extract_pockets
-```
-
-## Testing & formatting
-
-```bash
-make test      # uv run pytest
-make format    # uv run ruff format
+uv run kedro run --pipeline=pocket_ml
 ```
 
 ## Roadmap
