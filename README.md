@@ -5,24 +5,15 @@
 ## Overview
 
 Project investigating whether AlphaFold-predicted protein structures
-are accurate enough to assess **druggability** of binding pockets. For a curated set
-of human proteins we collect both experimental ([RCSB PDB](https://www.rcsb.org))
-and predicted ([AlphaFold DB](https://alphafold.ebi.ac.uk)) structures, detect
+are accurate enough to assess **druggability** of binding pockets. We collect
+experimental ([RCSB PDB](https://www.rcsb.org)) and predicted ([AlphaFold DB](https://alphafold.ebi.ac.uk)) structures, detect
 binding pockets, compare them, and train a classifier that predicts whether a pocket
-is druggable from geometric and physicochemical descriptors. The project is built
-on top of [Kedro](https://kedro.org) for pipeline orchestration.
+is druggable from geometric and physicochemical descriptors. Built on [Kedro](https://kedro.org).
 
 ## Prerequisites
 
-- **Python 3.13** — see `.python-version`. `pyproject.toml` accepts `>=3.10`, but
-  the lockfile is resolved against 3.13.
-- **[`uv`](https://docs.astral.sh/uv/)** — the package manager used throughout.
-  Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS / Linux)
-  or follow the [official installer instructions](https://docs.astral.sh/uv/getting-started/installation/).
-
-The current pipelines are pure Python — no JVM, Docker, or system libraries
-required. Pocket-detection tools (fpocket, P2Rank) will be needed once that step
-is integrated; see [Roadmap](#roadmap).
+- **Python 3.13** — see `.python-version`.
+- **[`uv`](https://docs.astral.sh/uv/)** — install per project docs.
 
 ## Setup
 
@@ -31,14 +22,13 @@ environment:
 
 ```bash
 make init
-# equivalent to:
-#   uv init && uv sync --all-groups
+# equivalent to: uv init && uv sync --all-groups
 ```
 
-For an existing checkout, re-sync after pulling changes:
+For existing checkout, re-sync after pulling changes:
 
 ```bash
-make sync          # uv sync --all-groups
+make sync
 ```
 
 Verify the install:
@@ -48,37 +38,37 @@ uv run kedro info
 ```
 
 ## P2Rank setup
-Projekt używa P2Rank do wykrywania kieszeni. P2Rank jest dołączony jako submodule w `libs/p2rank`; nie dodawaj skompilowanej wersji bezpośrednio do repo.
+P2Rank is included as a git submodule under `libs/p2rank`. Do not add a built distro into the main repo.
 
-Klonowanie z submodule:
+Clone with submodules:
 
 ```bash
-# sklonuj razem z submodule
 git clone --recurse-submodules <repo-url>
-# jeśli repo jest już sklonowane:
+# or for an existing clone:
 git submodule update --init --recursive
 ```
 
-Kompilacja P2Rank (tworzy katalog `distro` z binarkami):
+Build P2Rank (produces `distro` with binaries):
 
 ```bash
 cd libs/p2rank
 ./make-distro.sh    # Linux / macOS
-# lub na Windows (użyj gradle wrappera opisnego w README p2rank):
+# or on Windows:
 ./gradlew.bat build
 ```
 
-Lokalizacje używane w konfiguracji projektu:
+Paths used by project configuration:
 
-- p2rank_dir: `./libs/p2rank/distro`
-- prank_bin (Linux / macOS): `./libs/p2rank/distro/prank`
-- prank_bin (Windows): `./libs/p2rank/distro/prank.bat`
+- `p2rank_dir`: `./libs/p2rank/distro`
+- `prank_bin` (Linux/macOS): `./libs/p2rank/distro/prank`
+- `prank_bin` (Windows): `./libs/p2rank/distro/prank.bat`
 
-Jeśli trzeba zmienić ścieżki, edytuj plik `conf/base/parameters_extract_pockets.yml` i ustaw `p2rank_dir` oraz `prank_bin` odpowiednio do systemu.
+To change these, edit `conf/base/parameters_extract_pockets.yml` and set `p2rank_dir` and `prank_bin` accordingly.
 
-Po skompilowaniu i ustawieniu ścieżek pipeline `extract_pockets` powinien uruchamiać się poprawnie.
+After building and configuring paths, run the extract_pockets pipeline.
 
 ## How to install dependencies
+
 You should see the pipelines `unzip` and `compare` listed.
 
 ## Project layout
@@ -88,7 +78,8 @@ src/druggability/
   pipelines/
     protein_unzip/      # decompress raw .cif.gz files
     protein_compare/    # chain matching + sequence alignment + RMSD
-    protein_parsing/    # placeholder for downstream parsing
+    protein_parsing/    # downstream parsing utilities
+    extract_pockets/    # P2Rank-based pocket detection (requires P2Rank distro)
   datasets/
     protein_dataset.py  # MmcifPairedDataset (paired PDB + AlphaFold mmCIF)
     path_dataset.py     # PathDataset (passes file paths through the catalog)
@@ -97,14 +88,14 @@ conf/
   base/                 # catalog.yml, parameters_*.yml, logging.yml
   local/                # gitignored — local credentials / overrides
 data/
-  01_raw/proteins/      # committed sample data (PDB-*.cif.gz, LIG-*.cif.gz, AF-*.cif.gz)
-  02_intermediate/      # decompressed CIFs (output of `unzip` pipeline)
+  01_raw/proteins/      # committed sample data
+  02_intermediate/      # decompressed CIFs
   03_primary/           # matched PDB↔AlphaFold pairs
-  08_reporting/         # final outputs (e.g. protein_alignment_results.csv)
-notebooks/              # exploratory work (e.g. mmcif_parsing.ipynb)
+  08_reporting/         # final outputs
+notebooks/
+  # exploratory work
 docs/pocket-finding/    # fpocket vs P2Rank comparison + sample outputs
 tests/                  # pytest suite
-scrappingData.py        # standalone RCSB scraper (see below)
 ```
 
 ## Running the pipelines
@@ -118,53 +109,10 @@ uv run kedro run
 Run a specific pipeline:
 
 ```bash
-# Decompress data/01_raw/proteins/**/*.cif.gz into data/02_intermediate/proteins/
 uv run kedro run --pipeline=unzip
-
-# Match PDB↔AlphaFold chains, align them, write data/08_reporting/protein_alignment_results.csv
 uv run kedro run --pipeline=compare
+uv run kedro run --pipeline=extract_pockets
 ```
-
-Alignment thresholds (chain identity cutoff, gap penalties) live in
-`conf/base/parameters_protein_compare.yml`. Catalog entries — input paths,
-intermediate locations, and the final CSV — are defined in `conf/base/catalog.yml`.
-
-Visualize the DAG:
-
-```bash
-uv run kedro viz
-```
-
-For interactive exploration (`context`, `catalog`, `pipelines` are pre-loaded):
-
-```bash
-uv run kedro jupyter notebook
-uv run kedro ipython
-```
-
-## Fetching new data (optional)
-
-`scrappingData.py` queries RCSB for human X-ray structures with bound non-water
-ligands and downloads the matching CIF files (plus a `rcsb_hits.json` manifest)
-into `data/01_raw/proteins/<ENTRY_ID>/`.
-
-> **Heads up:** the scraper imports `rcsbapi`, which is **not yet listed in
-> `pyproject.toml`**. Install it once before running:
->
-> ```bash
-> uv add rcsbapi
-> ```
-
-Then:
-
-```bash
-uv run python scrappingData.py --help
-uv run python scrappingData.py --output-dir data/01_raw/proteins
-```
-
-AlphaFold structures (`AF-<UniProt>-*.cif.gz`) are currently fetched manually
-from [AlphaFold DB](https://alphafold.ebi.ac.uk) and dropped alongside the PDB
-file in the same protein folder. Automating this is on the roadmap.
 
 ## Testing & formatting
 
@@ -173,34 +121,6 @@ make test      # uv run pytest
 make format    # uv run ruff format
 ```
 
-Coverage settings live under `[tool.coverage.report]` in `pyproject.toml`.
-
 ## Roadmap
 
-**Implemented**
-
-- RCSB scraper for human structures with bound ligands (`scrappingData.py`).
-- `unzip` pipeline — decompress paired PDB / AlphaFold mmCIF inputs.
-- `compare` pipeline — chain matching by sequence identity, structural
-  alignment, and per-pair RMSD reporting.
-
-**Planned**
-
-- Pocket detection on both PDB and AlphaFold structures using **fpocket** and/or
-  **P2Rank** — see `docs/pocket-finding/comparison.md`, `docs/pocket-finding/fpocket.md`,
-  and `docs/pocket-finding/p2rank.md` for a tool-by-tool comparison and sample
-  outputs.
-- Pocket descriptor extraction (volume, hydrophobicity, polarity, compactness).
-- Druggability classifier (logistic regression / random forest) trained on
-  PDBbind / DrugBank ligand–protein pairs.
-- pLDDT-based filtering of low-confidence AlphaFold regions before pocket
-  detection, and analysis of how prediction confidence affects druggability
-  agreement with experimental structures.
-
-## References
-
-- Kedro documentation — https://docs.kedro.org
-- AlphaFold Protein Structure Database — https://alphafold.ebi.ac.uk
-- RCSB Protein Data Bank — https://www.rcsb.org
-- In-repo notes: `docs/pocket-finding/comparison.md`, `docs/pocket-finding/fpocket.md`,
-  `docs/pocket-finding/p2rank.md`
+See `docs/pocket-finding/` for pocket-finding specifics.
