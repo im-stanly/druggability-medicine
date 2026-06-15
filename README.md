@@ -48,9 +48,35 @@ uv run kedro info
 ```
 
 ## P2Rank setup
-The project uses P2Rank for pocket detection. In order to setup the P2Rank download the binary from [P2Rank releases](https://github.com/rdk/p2rank/releases). 
+Projekt używa P2Rank do wykrywania kieszeni. P2Rank jest dołączony jako submodule w `libs/p2rank`; nie dodawaj skompilowanej wersji bezpośrednio do repo.
 
-Put the downloaded binary in the root folder of the project. If done correctly the `extract_pockets` pipeline should run without any issues.
+Klonowanie z submodule:
+
+```bash
+# sklonuj razem z submodule
+git clone --recurse-submodules <repo-url>
+# jeśli repo jest już sklonowane:
+git submodule update --init --recursive
+```
+
+Kompilacja P2Rank (tworzy katalog `distro` z binarkami):
+
+```bash
+cd libs/p2rank
+./make-distro.sh    # Linux / macOS
+# lub na Windows (użyj gradle wrappera opisnego w README p2rank):
+./gradlew.bat build
+```
+
+Lokalizacje używane w konfiguracji projektu:
+
+- p2rank_dir: `./libs/p2rank/distro`
+- prank_bin (Linux / macOS): `./libs/p2rank/distro/prank`
+- prank_bin (Windows): `./libs/p2rank/distro/prank.bat`
+
+Jeśli trzeba zmienić ścieżki, edytuj plik `conf/base/parameters_extract_pockets.yml` i ustaw `p2rank_dir` oraz `prank_bin` odpowiednio do systemu.
+
+Po skompilowaniu i ustawieniu ścieżek pipeline `extract_pockets` powinien uruchamiać się poprawnie.
 
 ## How to install dependencies
 You should see the pipelines `unzip` and `compare` listed.
