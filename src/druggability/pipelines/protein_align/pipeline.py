@@ -17,7 +17,7 @@ def create_pipeline(**kwargs) -> Pipeline:
     ),
     Node(
         func=predict_binding_pockets,
-        inputs=["aligned_paths", "params:p2rank", "params:pocket_probability_threshold", "aligned_completed"],
+        inputs=["aligned_paths", "params:p2rank_exp", "params:pocket_probability_threshold", "aligned_completed"],
         outputs="predicted_pockets_dataset",
         name="p2rank_pocket_finding_node",
     )
