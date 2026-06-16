@@ -5,52 +5,16 @@
 ## Overview
 
 Project investigating whether AlphaFold-predicted protein structures
-are accurate enough to assess **druggability** of binding pockets. For a curated set
-of human proteins we collect both experimental ([RCSB PDB](https://www.rcsb.org))
-and predicted ([AlphaFold DB](https://alphafold.ebi.ac.uk)) structures, detect
+are accurate enough to assess **druggability** of binding pockets. We collect
+experimental ([RCSB PDB](https://www.rcsb.org)) and predicted ([AlphaFold DB](https://alphafold.ebi.ac.uk)) structures, detect
 binding pockets, compare them, and train a classifier that predicts whether a pocket
-is druggable from geometric and physicochemical descriptors. The project is built
-on top of [Kedro](https://kedro.org) for pipeline orchestration.
+is druggable from geometric and physicochemical descriptors. Built on [Kedro](https://kedro.org).
 
 ## Prerequisites
 
-- **Python 3.13** — see `.python-version`. `pyproject.toml` accepts `>=3.10`, but
-  the lockfile is resolved against 3.13.
-- **[`uv`](https://docs.astral.sh/uv/)** — the package manager used throughout.
-  Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS / Linux)
-  or follow the [official installer instructions](https://docs.astral.sh/uv/getting-started/installation/).
+- **Python 3.13** — see `.python-version`.
+- **[`uv`](https://docs.astral.sh/uv/)** — install per project docs.
 
-The current pipelines are pure Python — no JVM, Docker, or system libraries
-required. Pocket-detection tools (fpocket, P2Rank) will be needed once that step
-is integrated; see [Roadmap](#roadmap).
-
-## Setup
-
-Clone the repository and install dependencies into a project-local virtual
-environment:
-
-```bash
-make init
-# equivalent to:
-#   uv init && uv sync --all-groups
-```
-
-For an existing checkout, re-sync after pulling changes:
-
-```bash
-make sync          # uv sync --all-groups
-```
-
-Verify the install:
-
-```bash
-uv run kedro info
-```
-
-## P2Rank setup
-The project uses P2Rank for pocket detection. In order to setup the P2Rank download the binary from [P2Rank releases](https://github.com/rdk/p2rank/releases). 
-
-Put the downloaded binary in the root folder of the project. If done correctly the `extract_pockets` pipeline should run without any issues.
 
 **Java requirement:** P2Rank needs Java 17+. On macOS:
 ```bash
@@ -64,17 +28,69 @@ uv add xgboost
 brew install libomp
 ```
 
-## How to install dependencies
-You should see the pipelines `unzip` and `compare` listed.
+## Setup
+Clone the repository using: 
+```bash
+git clone --recursive https://github.com/im-stanly/druggability-medicine.git
+# or with ssh
+git clone --recursive git@github.com:im-stanly/druggability-medicine.git
+```
+Install dependencies into a project-local virtual
+environment:
+
+```bash
+make init
+# equivalent to: uv init && uv sync --all-groups
+```
+
+For existing checkout, re-sync after pulling changes:
+
+```bash
+make sync
+```
+
+Verify the install:
+
+```bash
+uv run kedro info
+```
+
+## P2Rank setup
+P2Rank is included as a git submodule under `libs/p2rank`. Do not add a built distro into the main repo.
+
+Clone with submodules:
+
+```bash
+git clone --recursive 
+# or for an existing clone:
+git submodule update --init --recursive
+```
+
+Build P2Rank (produces `distro` with binaries):
+
+```bash
+cd libs/p2rank
+./make-distro.sh    # Linux / macOS
+# or on Windows:
+./gradlew.bat build
+```
+
+Paths used by project configuration:
+
+- `p2rank_dir`: `./libs/p2rank/distro`
+- `prank_bin` (Linux/macOS): `./libs/p2rank/distro/prank`
+- `prank_bin` (Windows): `./libs/p2rank/distro/prank.bat`
 
 ## Project layout
 
 ```
 src/druggability/
   pipelines/
+    compare_pockets/    # compare and match pockets between PDB and AlphaFold
+    extract_pockets/    # P2Rank-based pocket detection (requires P2Rank distro)
+    pocket_ml/          # pocket machine-learning pipeline
+    protein_align/      # chain matching + sequence alignment + RMSD
     protein_unzip/      # decompress raw .cif.gz files
-    protein_compare/    # chain matching + sequence alignment + RMSD
-    protein_parsing/    # placeholder for downstream parsing
   datasets/
     protein_dataset.py  # MmcifPairedDataset (paired PDB + AlphaFold mmCIF)
     path_dataset.py     # PathDataset (passes file paths through the catalog)
@@ -83,14 +99,29 @@ conf/
   base/                 # catalog.yml, parameters_*.yml, logging.yml
   local/                # gitignored — local credentials / overrides
 data/
-  01_raw/proteins/      # committed sample data (PDB-*.cif.gz, LIG-*.cif.gz, AF-*.cif.gz)
-  02_intermediate/      # decompressed CIFs (output of `unzip` pipeline)
-  03_primary/           # matched PDB↔AlphaFold pairs
-  08_reporting/         # final outputs (e.g. protein_alignment_results.csv)
-notebooks/              # exploratory work (e.g. mmcif_parsing.ipynb)
-docs/pocket-finding/    # fpocket vs P2Rank comparison + sample outputs
-tests/                  # pytest suite
-scrappingData.py        # standalone RCSB scraper (see below)
+  01_raw/                # raw inputs (protein_ligand_raw, proteins)
+  02_intermediate/       # decompressed CIFs and intermediate artifacts
+  03_primary/            # matched PDB ↔ AlphaFold pairs
+  04_feature/            # feature extraction outputs
+  05_model_input/
+  06_models/
+  07_model_output/
+  08_reporting/          # final outputs and reports
+  scrapped/              # scraped RCSB/AlphaFold hits and intermediate JSON
+docs/
+  pocket-finding/        # fpocket vs P2Rank comparison + examples
+libs/
+  p2rank/                # p2rank submodule (build produces distro/)
+notebooks/               # exploratory notebooks
+tests/                   # pytest suite and pipeline tests
+```
+
+Notes:
+- P2Rank is included as a git submodule under `libs/p2rank` and must be built
+  to produce the `distro` used by the `extract_pockets` pipeline.
+- Configuration is driven from `conf/base` with local overrides in `conf/local`.
+- Pipelines are registered in `src/druggability/pipeline_registry.py` and
+  executed via Kedro (invoked through `uv` in this project).
 ```
 
 ## Running the pipelines
@@ -104,11 +135,12 @@ uv run kedro run
 Run a specific pipeline:
 
 ```bash
-# Decompress data/01_raw/proteins/**/*.cif.gz into data/02_intermediate/proteins/
 uv run kedro run --pipeline=unzip
-
-# Match PDB↔AlphaFold chains, align them, write data/08_reporting/protein_alignment_results.csv
 uv run kedro run --pipeline=compare
+uv run kedro run --pipeline=align
+uv run kedro run --pipeline=extract_pockets
+uv run kedro run --pipeline=pocket_ml
+```
 
 # Run P2Rank pocket detection on all training structures
 uv run kedro run --pipeline=extract_pockets
@@ -239,5 +271,7 @@ Coverage settings live under `[tool.coverage.report]` in `pyproject.toml`.
 - Kedro documentation — https://docs.kedro.org
 - AlphaFold Protein Structure Database — https://alphafold.ebi.ac.uk
 - RCSB Protein Data Bank — https://www.rcsb.org
+- fpocket — https://github.com/Discngine/fpocket
+- P2Rank — https://github.com/rdk/p2rank
 - In-repo notes: `docs/pocket-finding/comparison.md`, `docs/pocket-finding/fpocket.md`,
   `docs/pocket-finding/p2rank.md`

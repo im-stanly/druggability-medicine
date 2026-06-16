@@ -1,0 +1,3 @@
+[submodule "libs/p2rank"]
+	path = libs/p2rank
+	url = git@github.com:rdk/p2rank.git

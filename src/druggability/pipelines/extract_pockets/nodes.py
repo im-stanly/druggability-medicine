@@ -21,7 +21,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-
+import platform as sys_platform
 import pandas as pd
 
 
@@ -62,7 +62,10 @@ def run_p2rank_and_parse_pockets(
     cfg = P2RankConfig(**p2rank)
 
     p2rank_dir = Path(cfg.p2rank_dir)
-    prank = Path(cfg.prank_bin) if cfg.prank_bin else (p2rank_dir / "prank")
+    
+    prank = Path(cfg.prank_bin) if cfg.prank_bin else (p2rank_dir / "distro" / "prank")
+    if sys_platform.system() == "Windows" and prank.suffix != ".bat":
+        prank = prank.with_name(f"{prank.name}.bat")
     if not prank.exists():
         raise FileNotFoundError(f"P2Rank launcher not found at: {prank}")
 

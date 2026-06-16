@@ -5,10 +5,10 @@
 # Link: https://docs.kedro.org/en/1.3.0/configuration/parameters.html
 
 p2rank:
-  # Path to p2rank_2.5.1 directory
-  p2rank_dir: ./p2rank_2.5.1
+  # Path to p2rank distro submodule
+  p2rank_dir: ./libs/p2rank/distro
   # Optional explicit prank launcher (defaults to <p2rank_dir>/prank)
-  prank_bin: ./p2rank_2.5.1/prank
+  prank_bin: ./libs/p2rank/distro/prank
   # Optional: set JAVA_HOME if your system Java can't find a runtime
   # java_home: /Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
   threads: 4

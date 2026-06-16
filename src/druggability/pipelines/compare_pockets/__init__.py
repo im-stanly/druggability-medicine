@@ -1,5 +1,5 @@
 """
-This is a boilerplate pipeline 'protein_parsing'
+This is a boilerplate pipeline 'compare_pockets'
 generated using Kedro 1.3.0
 """
 

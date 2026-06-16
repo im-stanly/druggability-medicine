@@ -1,6 +1,0 @@
-aligner_cfg:
-  mode: "local"
-  extend_gap_score: -1
-  open_gap_score: -10
-
-match_threshold: 0.80
