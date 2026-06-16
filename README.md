@@ -15,6 +15,19 @@ is druggable from geometric and physicochemical descriptors. Built on [Kedro](ht
 - **Python 3.13** — see `.python-version`.
 - **[`uv`](https://docs.astral.sh/uv/)** — install per project docs.
 
+
+**Java requirement:** P2Rank needs Java 17+. On macOS:
+```bash
+brew install openjdk@17
+```
+Set `java_home` in `conf/base/parameters_extract_pockets.yml` to your JDK path.
+
+**xgboost requirement:** the `pocket_ml` pipeline needs xgboost + OpenMP:
+```bash
+uv add xgboost
+brew install libomp
+```
+
 ## Setup
 Clone the repository using: 
 ```bash
@@ -67,10 +80,6 @@ Paths used by project configuration:
 - `p2rank_dir`: `./libs/p2rank/distro`
 - `prank_bin` (Linux/macOS): `./libs/p2rank/distro/prank`
 - `prank_bin` (Windows): `./libs/p2rank/distro/prank.bat`
-
-To change these, edit `conf/base/parameters_extract_pockets.yml` and set `p2rank_dir` and `prank_bin` accordingly.
-
-After building and configuring paths, run the extract_pockets pipeline.
 
 ## Project layout
 
@@ -133,6 +142,136 @@ uv run kedro run --pipeline=extract_pockets
 uv run kedro run --pipeline=pocket_ml
 ```
 
+# Run P2Rank pocket detection on all training structures
+uv run kedro run --pipeline=extract_pockets
+
+# Train XGBoost druggability classifier on P2Rank-detected pockets
+uv run kedro run --pipeline=pocket_ml
+```
+
+Alignment thresholds (chain identity cutoff, gap penalties) live in
+`conf/base/parameters_protein_compare.yml`. Catalog entries — input paths,
+intermediate locations, and the final CSV — are defined in `conf/base/catalog.yml`.
+
+Visualize the DAG:
+
+```bash
+uv run kedro viz
+```
+
+For interactive exploration (`context`, `catalog`, `pipelines` are pre-loaded):
+
+```bash
+uv run kedro jupyter notebook
+uv run kedro ipython
+```
+
+### pLDDT filtering (optional)
+
+Before running P2Rank, you can filter out low-confidence AlphaFold regions
+by setting `plddt_threshold` in `conf/base/parameters_extract_pockets.yml`:
+
+```yaml
+p2rank:
+  plddt_threshold: 70.0   # atoms with pLDDT < 70 → occupancy=0 → hidden from P2Rank
+```
+
+Set to `0.0` (default) to disable. The filter only affects AlphaFold structures
+(where B-factor = pLDDT); PDB structures pass through unchanged.
+
+```bash
+uv run kedro run --pipeline=extract_pockets
+```
+
+### Hypothesis verification scripts
+
+Three standalone verification scripts (no Kedro needed):
+
+```bash
+# H1: pLDDT filtering reduces false-positive pockets
+uv run python verify_plddt.py
+
+# H2: Simple pocket descriptors (volume, hydrophobicity, polarity)
+#     classify druggable pockets with AUROC > 0.75
+uv run python verify_simple_classifier.py
+
+# H3: AlphaFold pockets are ~40% smaller than PDB pockets
+#     (no induced fit → narrower binding sites)
+uv run python verify_af_volume.py
+```
+
+Results are saved to `data/08_reporting/`:
+- `plddt_verification.json`
+- `simple_classifier_results.json`
+- `af_volume_comparison.json`
+
+## Fetching new data (optional)
+
+`scrappingData.py` queries RCSB for human X-ray structures with bound non-water
+ligands and downloads the matching CIF files (plus a `rcsb_hits.json` manifest)
+into `data/01_raw/proteins/<ENTRY_ID>/`.
+
+> **Heads up:** the scraper imports `rcsbapi`, which is **not yet listed in
+> `pyproject.toml`**. Install it once before running:
+>
+> ```bash
+> uv add rcsb-api
+> ```
+
+Then:
+
+```bash
+uv run python scrappingData.py --help
+uv run python scrappingData.py --output-dir data/01_raw/protein_ligand_raw
+```
+
+AlphaFold structures (`AF-<UniProt>-*.cif.gz`) are currently fetched manually
+from [AlphaFold DB](https://alphafold.ebi.ac.uk) and dropped alongside the PDB
+file in the same protein folder. Automating this is on the roadmap.
+
+## Testing & formatting
+
+```bash
+make test      # uv run pytest
+make format    # uv run ruff format
+```
+
+Coverage settings live under `[tool.coverage.report]` in `pyproject.toml`.
+
 ## Roadmap
 
-See `docs/pocket-finding/` for pocket-finding specifics.
+**Implemented**
+
+- RCSB scraper for human structures with bound ligands (`scrappingData.py`).
+- `unzip` pipeline — decompress paired PDB / AlphaFold mmCIF inputs.
+- `protein_compare` pipeline — chain matching by sequence identity, structural
+  alignment, and per-pair RMSD reporting.
+- `extract_pockets` pipeline — P2Rank pocket detection on PDB structures with
+  optional pLDDT-based filtering of low-confidence AlphaFold regions.
+- `pocket_ml` pipeline — druggability classifier (XGBoost) trained on pocket
+  descriptors and ECFP fingerprints.
+- Hypothesis verification: pLDDT filtering, simple pocket classifier,
+  AF vs PDB pocket volume comparison.
+
+**Planned**
+
+- Pocket detection on both PDB and AlphaFold structures using **fpocket** and/or
+  **P2Rank** — see `docs/pocket-finding/comparison.md`, `docs/pocket-finding/fpocket.md`,
+  and `docs/pocket-finding/p2rank.md` for a tool-by-tool comparison and sample
+  outputs.
+- Pocket descriptor extraction (volume, hydrophobicity, polarity, compactness).
+- Druggability classifier (logistic regression / random forest) trained on
+  PDBbind / DrugBank ligand–protein pairs.
+- pLDDT-based filtering of low-confidence AlphaFold regions before pocket
+  detection, and analysis of how prediction confidence affects druggability
+  agreement with experimental structures.
+
+## References
+
+- Kedro documentation — https://docs.kedro.org
+- AlphaFold Protein Structure Database — https://alphafold.ebi.ac.uk
+- RCSB Protein Data Bank — https://www.rcsb.org
+- fpocket — https://github.com/Discngine/fpocket
+- P2Rank — https://github.com/rdk/p2rank
+- In-repo notes: `docs/pocket-finding/comparison.md`, `docs/pocket-finding/fpocket.md`,
+  `docs/pocket-finding/p2rank.md`
